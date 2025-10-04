@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+/* Theme variables to match the reference UI */
+:root {
+  --primary: #1173d4;
+  --background: #f6f7f8;
+  --foreground: #101922;
+  --border-color: #e5e7eb;
+  --card-background: #ffffff;
+  --text-secondary: #6b7280;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+/* Base font */
+body {
+  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+}
+
+/* Utility classes to bridge reference UI naming */
+.font-display { font-family: 'Inter', sans-serif; }
+
+.bg-background { background-color: var(--background); }
+.text-foreground { color: var(--foreground); }
+.text-text-secondary { color: var(--text-secondary); }
+.bg-card-background { background-color: var(--card-background); }
+.border-border-color { border-color: var(--border-color); }
+.text-primary { color: var(--primary); }
+.bg-primary { background-color: var(--primary); }
+
+/* Simple alpha variants used in the reference */
+.bg-primary-10 { background-color: rgba(17, 115, 212, 0.10); }
+.bg-primary-20 { background-color: rgba(17, 115, 212, 0.20); }
+
+/* Hover helpers */
+.hover\:bg-primary-10:hover { background-color: rgba(17, 115, 212, 0.10); }
+.hover\:text-primary:hover { color: var(--primary); }
+
+/* You can keep some base styles if desired, but Tailwind will handle most styling */
