@@ -7,7 +7,10 @@ from pathlib import Path
 from fastapi import HTTPException
 
 # Workspace root is limited to WORKSPACE_DIR
-WORKSPACE_DIR = Path(os.getenv("WORKSPACE_DIR", "/Users/husun/github/coders/markdown/workspace")).resolve()
+WORKSPACE_DIR = Path(os.getenv("WORKSPACE_DIR", Path.home() / "workspace")).resolve()
+
+# Ensure the workspace directory exists
+WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _safe_join(rel_path: str) -> Path:

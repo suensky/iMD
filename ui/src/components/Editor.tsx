@@ -5,6 +5,30 @@ import { markdown } from '@codemirror/lang-markdown'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { readFile, writeFile } from '../lib/api'
+import type { Components } from 'react-markdown'
+
+const markdownComponents: Components = {
+  a: props => <a {...props} target="_blank" rel="noopener noreferrer" className="markdown-link" />,
+  code: ({ inline, className, children, ...props }) => {
+    const language = /language-(\w+)/.exec(className ?? '')?.[1]
+
+    if (inline) {
+      return (
+        <code className="markdown-code-inline" {...props}>
+          {children}
+        </code>
+      )
+    }
+
+    return (
+      <pre className="markdown-code-block" data-language={language}>
+        <code className={className} {...props}>
+          {children}
+        </code>
+      </pre>
+    )
+  },
+}
 
 type EditorProps = {
   path?: string
@@ -121,7 +145,11 @@ export function Editor({ path, onPathChange }: EditorProps) {
       <div className="flex-1 overflow-hidden">
         {preview ? (
           <div className="max-w-none p-4 overflow-auto h-full bg-card-background text-foreground">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            <div className="markdown-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                {content}
+              </ReactMarkdown>
+            </div>
           </div>
         ) : (
           <CodeMirror

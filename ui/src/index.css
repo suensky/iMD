@@ -39,3 +39,112 @@ body {
 .hover\:text-primary:hover { color: var(--primary); }
 
 /* You can keep some base styles if desired, but Tailwind will handle most styling */
+
+.markdown-body {
+  line-height: 1.7;
+  font-size: 0.95rem;
+  color: var(--foreground);
+  word-break: break-word;
+}
+
+.markdown-body > *:first-child {
+  margin-top: 0;
+}
+
+.markdown-body > *:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin-top: 1.6em;
+  margin-bottom: 0.6em;
+}
+
+.markdown-body h1 { font-size: 2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
+.markdown-body h2 { font-size: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
+.markdown-body h3 { font-size: 1.25rem; }
+.markdown-body h4 { font-size: 1.1rem; }
+.markdown-body h5 { font-size: 1rem; }
+.markdown-body h6 { font-size: 0.9rem; color: var(--text-secondary); }
+
+.markdown-body p,
+.markdown-body blockquote,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body pre,
+.markdown-body table {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+.markdown-body blockquote {
+  padding-left: 1em;
+  border-left: 4px solid rgba(17, 115, 212, 0.2);
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.5rem;
+}
+
+.markdown-body li + li {
+  margin-top: 0.4em;
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--border-color);
+  padding: 0.6em 0.8em;
+  text-align: left;
+}
+
+.markdown-body th {
+  background-color: rgba(17, 115, 212, 0.05);
+}
+
+.markdown-code-inline {
+  font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  background-color: rgba(17, 115, 212, 0.1);
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.markdown-code-block {
+  font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  background-color: rgba(17, 115, 212, 0.08);
+  border: 1px solid rgba(17, 115, 212, 0.2);
+  border-radius: 6px;
+  padding: 1em;
+  overflow-x: auto;
+  font-size: 0.9rem;
+}
+
+.markdown-body pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown-link {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.markdown-link:hover {
+  text-decoration: none;
+}
