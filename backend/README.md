@@ -4,7 +4,6 @@ FastAPI backend for the local-first AI-assisted Markdown editor.
 
 - API base: http://127.0.0.1:8000/api
 - CORS during dev: http://localhost:5173
-- Workspace (files allowed): /Users/husun/github/coders/markdown/workspace
 
 ## Quickstart
 
@@ -15,9 +14,7 @@ FastAPI backend for the local-first AI-assisted Markdown editor.
 
 2) Start the dev server (via uv)
 
-   uv run --env-file /Users/husun/github/coders/markdown/backend/.env \
-     --directory /Users/husun/github/coders/markdown/backend \
-     uvicorn app.main:app --app-dir src --reload --host 127.0.0.1 --port 8000
+   at top level, run `make run`
 
 3) Test health
 
