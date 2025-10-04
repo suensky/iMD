@@ -15,7 +15,7 @@ function App() {
         </Panel>
         <PanelResizeHandle className="w-px bg-[var(--border-color)] transition-opacity hover:opacity-60" />
         <Panel defaultSize={55} minSize={30} className="h-full">
-          <Editor path={selectedPath} />
+          <Editor path={selectedPath} onPathChange={setSelectedPath} />
         </Panel>
         <PanelResizeHandle className="w-px bg-[var(--border-color)] transition-opacity hover:opacity-60" />
         <Panel defaultSize={25} minSize={20} className="h-full">

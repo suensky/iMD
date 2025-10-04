@@ -6,7 +6,12 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { readFile, writeFile } from '../lib/api'
 
-export function Editor({ path }: { path?: string }) {
+type EditorProps = {
+  path?: string
+  onPathChange?: (next: string) => void
+}
+
+export function Editor({ path, onPathChange }: EditorProps) {
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery({
     queryKey: ['file', path],
@@ -31,10 +36,58 @@ export function Editor({ path }: { path?: string }) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['file', path] })
+      qc.invalidateQueries({ queryKey: ['files'] })
+      qc.invalidateQueries({ queryKey: ['files', ''] })
+    },
+    onError: err => {
+      console.error(err)
+      window.alert('Failed to save file. Please try again.')
+    },
+  })
+
+  const saveAsMut = useMutation({
+    mutationFn: async (nextPath: string) => {
+      await writeFile(nextPath, content)
+      return nextPath
+    },
+    onSuccess: nextPath => {
+      qc.invalidateQueries({ queryKey: ['file', path] })
+      qc.invalidateQueries({ queryKey: ['file', nextPath] })
+      qc.invalidateQueries({ queryKey: ['files'] })
+      qc.invalidateQueries({ queryKey: ['files', ''] })
+      onPathChange?.(nextPath)
+    },
+    onError: err => {
+      console.error(err)
+      window.alert('Failed to save file. Please try again with a different name or location.')
     },
   })
 
   const extensions = useMemo(() => [markdown()], [])
+
+  const isDirty = content !== (data?.content ?? '')
+
+  const handleSave = () => {
+    if (!path || !isDirty) return
+    saveMut.mutate()
+  }
+
+  const handleSaveAs = () => {
+    const suggested = path ?? 'untitled.md'
+    const input = window.prompt('Save file as', suggested)
+    if (!input) return
+    const trimmed = input.trim()
+    if (!trimmed) return
+    if (!trimmed.endsWith('.md')) {
+      window.alert('Filename must end with ".md"')
+      return
+    }
+    if (trimmed === path) {
+      handleSave()
+      return
+    }
+    saveAsMut.mutate(trimmed)
+  }
 
   if (!path) return <div className="p-4 text-sm text-text-secondary">Select a file from the left to begin.</div>
   if (isLoading) return <div className="p-4 text-sm text-text-secondary">Loading...</div>
@@ -45,11 +98,18 @@ export function Editor({ path }: { path?: string }) {
       <div className="flex items-center gap-2 border-b border-border-color p-2 bg-card-background">
         <div className="text-sm text-text-secondary flex-1 truncate">{path}</div>
         <button
-          className="px-3 py-1.5 text-sm rounded bg-primary text-white hover:opacity-90"
-          onClick={() => saveMut.mutate()}
-          disabled={saveMut.isPending}
+          className="px-3 py-1.5 text-sm rounded bg-primary text-white hover:opacity-90 disabled:opacity-60"
+          onClick={handleSave}
+          disabled={!isDirty || saveMut.isPending || saveAsMut.isPending}
         >
-          {saveMut.isPending ? 'Saving...' : 'Save'}
+          {saveMut.isPending ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          className="px-3 py-1.5 text-sm rounded border border-border-color hover:bg-background"
+          onClick={handleSaveAs}
+          disabled={saveAsMut.isPending || saveMut.isPending}
+        >
+          {saveAsMut.isPending ? 'Saving…' : 'Save As'}
         </button>
         <button
           className="px-3 py-1.5 text-sm rounded border border-border-color hover:bg-background"
