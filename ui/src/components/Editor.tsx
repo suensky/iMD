@@ -5,6 +5,13 @@ import { markdown } from '@codemirror/lang-markdown'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { readFile, writeFile } from '../lib/api'
+import {
+  remarkDefinitionLists,
+  remarkLineBlocks,
+  remarkMath,
+  remarkPandocTables,
+  remarkSmartPunctuation,
+} from '../lib/markdownPlugins'
 import type { Components } from 'react-markdown'
 
 const markdownComponents: Components = {
@@ -26,6 +33,17 @@ const markdownComponents: Components = {
           {children}
         </code>
       </pre>
+    )
+  },
+  table: ({ node, ...props }) => {
+    const caption = typeof node?.data?.caption === 'string' ? node.data.caption : undefined
+    const table = <table {...props} />
+    if (!caption) return table
+    return (
+      <figure className="markdown-table-wrapper">
+        {table}
+        <figcaption className="markdown-table-caption">{caption}</figcaption>
+      </figure>
     )
   },
 }
@@ -88,6 +106,10 @@ export function Editor({ path, onPathChange }: EditorProps) {
   })
 
   const extensions = useMemo(() => [markdown()], [])
+  const previewPlugins = useMemo(
+    () => [remarkGfm, remarkPandocTables, remarkDefinitionLists, remarkLineBlocks, remarkMath, remarkSmartPunctuation],
+    [],
+  )
 
   const isDirty = content !== (data?.content ?? '')
 
@@ -146,7 +168,7 @@ export function Editor({ path, onPathChange }: EditorProps) {
         {preview ? (
           <div className="max-w-none p-4 overflow-auto h-full bg-card-background text-foreground">
             <div className="markdown-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              <ReactMarkdown remarkPlugins={previewPlugins} components={markdownComponents}>
                 {content}
               </ReactMarkdown>
             </div>
