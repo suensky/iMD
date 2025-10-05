@@ -7,9 +7,11 @@ import remarkGfm from 'remark-gfm'
 import { readFile, writeFile } from '../lib/api'
 import {
   remarkDefinitionLists,
+  remarkEmoji,
   remarkLineBlocks,
   remarkMath,
   remarkPandocTables,
+  remarkSubSuperscript,
   remarkSmartPunctuation,
 } from '../lib/markdownPlugins'
 import type { Components } from 'react-markdown'
@@ -107,7 +109,16 @@ export function Editor({ path, onPathChange }: EditorProps) {
 
   const extensions = useMemo(() => [markdown()], [])
   const previewPlugins = useMemo(
-    () => [remarkGfm, remarkPandocTables, remarkDefinitionLists, remarkLineBlocks, remarkMath, remarkSmartPunctuation],
+    () => [
+      remarkGfm,
+      remarkPandocTables,
+      remarkDefinitionLists,
+      remarkLineBlocks,
+      remarkMath,
+      remarkSubSuperscript,
+      remarkEmoji,
+      remarkSmartPunctuation,
+    ],
     [],
   )
 

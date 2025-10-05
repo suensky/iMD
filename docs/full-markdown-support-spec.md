@@ -13,3 +13,4 @@ Expand the markdown rendering pipeline so every construct in the referenced samp
 ## Verification Notes
 - Lists now render with list markers again after Tailwind resets because preview styles reintroduce ordered and unordered bullets.
 - Inline and block math are emitted via custom remark transforms; confirm rendering by loading the gist sample once the UI preview is running.
+- Emoji shortcodes plus subscript/superscript spans are normalized via custom remark plugins; re-run the markdown cheat sheet preview to confirm visuals.
