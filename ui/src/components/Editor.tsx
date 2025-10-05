@@ -146,7 +146,7 @@ export function Editor({ path, onPathChange }: EditorProps) {
     saveAsMut.mutate(trimmed)
   }
 
-  if (!path) return <div className="p-4 text-sm text-text-secondary">Select a file from the left to begin.</div>
+  if (!path) return <div className="h-full bg-card-background" />
   if (isLoading) return <div className="p-4 text-sm text-text-secondary">Loading...</div>
   if (error) return <div className="p-4 text-sm text-red-500">Failed to load file.</div>
 
@@ -175,7 +175,7 @@ export function Editor({ path, onPathChange }: EditorProps) {
           {preview ? 'Edit' : 'Preview'}
         </button>
       </div>
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {preview ? (
           <div className="max-w-none p-4 overflow-auto h-full bg-card-background text-foreground">
             <div className="markdown-body">
@@ -192,6 +192,7 @@ export function Editor({ path, onPathChange }: EditorProps) {
             extensions={extensions}
             onChange={setContent}
             theme="light"
+            className="h-full bg-card-background"
           />
         )}
       </div>

@@ -1,11 +1,32 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { Sidebar } from './components/Sidebar'
 import { Editor } from './components/Editor'
 import { Chat } from './components/Chat'
+import { listFiles, type FileNode } from './lib/api'
 
 function App() {
-  const [selectedPath, setSelectedPath] = useState<string | undefined>('notes.md')
+  const [selectedPath, setSelectedPath] = useState<string | undefined>()
+
+  const { data: files } = useQuery({
+    queryKey: ['files', ''],
+    queryFn: () => listFiles(''),
+  })
+
+  const markdownFiles = useMemo(
+    () => (files ?? []).filter((file: FileNode) => !file.is_dir && file.name.endsWith('.md')),
+    [files],
+  )
+
+  useEffect(() => {
+    setSelectedPath(current => {
+      if (!markdownFiles.length) return undefined
+      const stillExists = current && markdownFiles.some(file => file.path === current)
+      if (stillExists) return current
+      return markdownFiles[0]?.path
+    })
+  }, [markdownFiles])
 
   return (
     <div className="h-full bg-background text-foreground font-display">
