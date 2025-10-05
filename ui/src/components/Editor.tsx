@@ -4,12 +4,13 @@ import CodeMirror from '@uiw/react-codemirror'
 import { markdown } from '@codemirror/lang-markdown'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeMathjax from 'rehype-mathjax'
 import { readFile, writeFile } from '../lib/api'
 import {
   remarkDefinitionLists,
   remarkEmoji,
   remarkLineBlocks,
-  remarkMath,
   remarkPandocTables,
   remarkSubSuperscript,
   remarkSmartPunctuation,
@@ -111,16 +112,17 @@ export function Editor({ path, onPathChange }: EditorProps) {
   const previewPlugins = useMemo(
     () => [
       remarkGfm,
+      remarkMath,
       remarkPandocTables,
       remarkDefinitionLists,
       remarkLineBlocks,
-      remarkMath,
       remarkSubSuperscript,
       remarkEmoji,
       remarkSmartPunctuation,
     ],
     [],
   )
+  const previewRehypePlugins = useMemo(() => [rehypeMathjax], [])
 
   const isDirty = content !== (data?.content ?? '')
 
@@ -179,7 +181,11 @@ export function Editor({ path, onPathChange }: EditorProps) {
         {preview ? (
           <div className="max-w-none p-4 overflow-auto h-full bg-card-background text-foreground">
             <div className="markdown-body">
-              <ReactMarkdown remarkPlugins={previewPlugins} components={markdownComponents}>
+              <ReactMarkdown
+                remarkPlugins={previewPlugins}
+                rehypePlugins={previewRehypePlugins}
+                components={markdownComponents}
+              >
                 {content}
               </ReactMarkdown>
             </div>

@@ -200,22 +200,19 @@ body {
   margin: 0.2em 0 0.8em 1.2em;
 }
 
-.markdown-math-inline {
-  font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  background-color: rgba(17, 115, 212, 0.1);
-  border-radius: 4px;
-  padding: 0.1em 0.35em;
+.markdown-body mjx-container {
+  display: inline-block;
+  margin: 0 0.1em;
 }
 
-.markdown-math-display,
-.markdown-math-block {
+.markdown-body mjx-container[jax='CHTML'][display='true'] {
   display: block;
-  margin: 1.2em 0;
-  padding: 0.75em 1em;
-  background-color: rgba(17, 115, 212, 0.08);
-  border-radius: 6px;
-  font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   text-align: center;
+  margin: 1.5em auto;
+}
+
+.markdown-body mjx-container[jax='CHTML'] mjx-math {
+  font-size: 1em;
 }
 
 .markdown-body .footnotes {
