@@ -227,6 +227,7 @@ export function Editor({ path, onPathChange }: EditorProps) {
           className="p-2 rounded border border-border-color hover:bg-background text-text-secondary"
           onClick={() => setPreviewOpen(p => !p)}
           aria-label={isPreviewOpen ? 'Close preview' : 'Open preview'}
+          title="Preview"
         >
           {isPreviewOpen ? (
             <PanelRightClose className="h-4 w-4" aria-hidden="true" />
