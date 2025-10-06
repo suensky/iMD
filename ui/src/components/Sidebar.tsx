@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, FileText, Plus } from 'lucide-react'
 import { listFiles, type FileNode, writeFile } from '../lib/api'
+import { Tooltip } from './Tooltip'
 
 type SidebarProps = {
   selectedPath?: string
@@ -51,14 +52,16 @@ export function Sidebar({ selectedPath, onSelect, onCollapse, onExpand, isCollap
   if (isCollapsed) {
     return (
       <div className="h-full border-r border-border-color bg-card-background text-foreground flex flex-col items-center py-4 gap-3">
-        <button
-          type="button"
-          aria-label="Expand file explorer"
-          className="rounded-full border border-border-color p-1 text-text-secondary hover:text-foreground hover:bg-background"
-          onClick={onExpand}
-        >
-          <ChevronRight className="h-4 w-4" aria-hidden="true" />
-        </button>
+        <Tooltip label="Expand sidebar">
+          <button
+            type="button"
+            aria-label="Expand file explorer"
+            className="rounded-full border border-border-color p-1 text-text-secondary hover:text-foreground hover:bg-background"
+            onClick={onExpand}
+          >
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </Tooltip>
         <div className="flex-1 overflow-y-auto flex flex-col items-center gap-2 w-full">
           {isLoading && <span className="text-[11px] text-text-secondary">Loading…</span>}
           {error && !isLoading && <span className="text-[11px] text-red-500">Error</span>}
@@ -92,15 +95,16 @@ export function Sidebar({ selectedPath, onSelect, onCollapse, onExpand, isCollap
       <div className="p-4 text-sm font-semibold flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span>Files</span>
-          <button
-            type="button"
-            aria-label="Collapse file explorer"
-            className="rounded-full border border-border-color p-1 text-text-secondary hover:text-foreground hover:bg-background"
-            onClick={onCollapse}
-            title="Close sidebar"
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          </button>
+          <Tooltip label="Close sidebar">
+            <button
+              type="button"
+              aria-label="Collapse file explorer"
+              className="rounded-full border border-border-color p-1 text-text-secondary hover:text-foreground hover:bg-background"
+              onClick={onCollapse}
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </Tooltip>
         </div>
         <button
           className="text-xs px-2 py-1 rounded bg-primary text-white hover:opacity-90 disabled:opacity-60"

@@ -18,6 +18,7 @@ import {
   remarkSmartPunctuation,
 } from '../lib/markdownPlugins'
 import type { Components } from 'react-markdown'
+import { Tooltip } from './Tooltip'
 
 const markdownComponents: Components = {
   a: props => <a {...props} target="_blank" rel="noopener noreferrer" className="markdown-link" />,
@@ -223,18 +224,19 @@ export function Editor({ path, onPathChange }: EditorProps) {
         >
           {saveAsMut.isPending ? 'Saving…' : 'Save As'}
         </button>
-        <button
-          className="p-2 rounded border border-border-color hover:bg-background text-text-secondary"
-          onClick={() => setPreviewOpen(p => !p)}
-          aria-label={isPreviewOpen ? 'Close preview' : 'Open preview'}
-          title="Preview"
-        >
-          {isPreviewOpen ? (
-            <PanelRightClose className="h-4 w-4" aria-hidden="true" />
-          ) : (
-            <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
-          )}
-        </button>
+        <Tooltip label="Preview">
+          <button
+            className="p-2 rounded border border-border-color hover:bg-background text-text-secondary"
+            onClick={() => setPreviewOpen(p => !p)}
+            aria-label={isPreviewOpen ? 'Close preview' : 'Open preview'}
+          >
+            {isPreviewOpen ? (
+              <PanelRightClose className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
+        </Tooltip>
       </div>
       <div className="flex-1 min-h-0 flex bg-card-background">
         <div

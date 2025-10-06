@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Bot, ChevronRight } from 'lucide-react'
 import { aiChat, writeFile } from '../lib/api'
+import { Tooltip } from './Tooltip'
 
 type ChatProps = {
   path?: string
@@ -48,14 +49,16 @@ export function Chat({ path, onApplied, onCollapse, onExpand, isCollapsed }: Cha
   if (isCollapsed) {
     return (
       <div className="h-full border-l border-border-color bg-card-background text-foreground flex flex-col items-center justify-start py-4">
-        <button
-          type="button"
-          aria-label="Expand AI panel"
-          className="rounded-full border border-border-color p-2 text-text-secondary hover:text-foreground hover:bg-background"
-          onClick={() => onExpand?.()}
-        >
-          <Bot className="h-5 w-5" aria-hidden="true" />
-        </button>
+        <Tooltip label="Expand AI panel">
+          <button
+            type="button"
+            aria-label="Expand AI panel"
+            className="rounded-full border border-border-color p-2 text-text-secondary hover:text-foreground hover:bg-background"
+            onClick={() => onExpand?.()}
+          >
+            <Bot className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </Tooltip>
       </div>
     )
   }
@@ -64,15 +67,16 @@ export function Chat({ path, onApplied, onCollapse, onExpand, isCollapsed }: Cha
     <div className="flex items-center justify-between border-b border-border-color bg-card-background px-4 py-3">
       <span className="text-sm font-semibold">Ask AI</span>
       {onCollapse && (
-        <button
-          type="button"
-          aria-label="Collapse AI panel"
-          className="rounded-full border border-border-color p-1 text-text-secondary hover:text-foreground hover:bg-background"
-          onClick={onCollapse}
-          title="Close sidebar"
-        >
-          <ChevronRight className="h-4 w-4" aria-hidden="true" />
-        </button>
+        <Tooltip label="Close sidebar">
+          <button
+            type="button"
+            aria-label="Collapse AI panel"
+            className="rounded-full border border-border-color p-1 text-text-secondary hover:text-foreground hover:bg-background"
+            onClick={onCollapse}
+          >
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </Tooltip>
       )}
     </div>
   )
