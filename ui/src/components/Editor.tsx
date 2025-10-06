@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import CodeMirror from '@uiw/react-codemirror'
 import { markdown } from '@codemirror/lang-markdown'
@@ -6,6 +6,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeMathjax from 'rehype-mathjax'
+import { PanelRightClose, PanelRightOpen } from 'lucide-react'
+import type { EditorView } from '@codemirror/view'
 import { readFile, writeFile } from '../lib/api'
 import {
   remarkDefinitionLists,
@@ -68,7 +70,10 @@ export function Editor({ path, onPathChange }: EditorProps) {
   })
 
   const [content, setContent] = useState('')
-  const [preview, setPreview] = useState(false)
+  const [isPreviewOpen, setPreviewOpen] = useState(false)
+  const [editorView, setEditorView] = useState<EditorView | null>(null)
+  const previewRef = useRef<HTMLDivElement | null>(null)
+  const scrollSyncLockRef = useRef<'editor' | 'preview' | null>(null)
 
   useEffect(() => {
     setContent(data?.content ?? '')
@@ -126,6 +131,54 @@ export function Editor({ path, onPathChange }: EditorProps) {
 
   const isDirty = content !== (data?.content ?? '')
 
+  useEffect(() => {
+    const editorScrollEl = editorView?.scrollDOM
+    const previewScrollEl = previewRef.current
+
+    if (!editorScrollEl || !previewScrollEl) return
+
+    let frame: number | null = null
+
+    const syncScroll = (source: 'editor' | 'preview') => {
+      const from = source === 'editor' ? editorScrollEl : previewScrollEl
+      const to = source === 'editor' ? previewScrollEl : editorScrollEl
+
+      if (!to) return
+      if (scrollSyncLockRef.current && scrollSyncLockRef.current !== source) return
+
+      const fromScrollable = from.scrollHeight - from.clientHeight
+      const toScrollable = to.scrollHeight - to.clientHeight
+
+      if (fromScrollable <= 0 || toScrollable <= 0) return
+
+      const ratio = from.scrollTop / fromScrollable
+
+      scrollSyncLockRef.current = source
+
+      if (frame) cancelAnimationFrame(frame)
+
+      frame = requestAnimationFrame(() => {
+        to.scrollTop = ratio * toScrollable
+        scrollSyncLockRef.current = null
+      })
+    }
+
+    const handleEditorScroll = () => syncScroll('editor')
+    const handlePreviewScroll = () => syncScroll('preview')
+
+    editorScrollEl.addEventListener('scroll', handleEditorScroll)
+    previewScrollEl.addEventListener('scroll', handlePreviewScroll)
+
+    syncScroll('editor')
+
+    return () => {
+      editorScrollEl.removeEventListener('scroll', handleEditorScroll)
+      previewScrollEl.removeEventListener('scroll', handlePreviewScroll)
+      if (frame) cancelAnimationFrame(frame)
+      scrollSyncLockRef.current = null
+    }
+  }, [editorView, isPreviewOpen])
+
   const handleSave = () => {
     if (!path || !isDirty) return
     saveMut.mutate()
@@ -171,15 +224,39 @@ export function Editor({ path, onPathChange }: EditorProps) {
           {saveAsMut.isPending ? 'Saving…' : 'Save As'}
         </button>
         <button
-          className="px-3 py-1.5 text-sm rounded border border-border-color hover:bg-background"
-          onClick={() => setPreview(p => !p)}
+          className="p-2 rounded border border-border-color hover:bg-background text-text-secondary"
+          onClick={() => setPreviewOpen(p => !p)}
+          aria-label={isPreviewOpen ? 'Close preview' : 'Open preview'}
         >
-          {preview ? 'Edit' : 'Preview'}
+          {isPreviewOpen ? (
+            <PanelRightClose className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
+          )}
         </button>
       </div>
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {preview ? (
-          <div className="max-w-none p-4 overflow-auto h-full bg-card-background text-foreground">
+      <div className="flex-1 min-h-0 flex bg-card-background">
+        <div
+          className={`flex-1 min-w-0 h-full ${
+            isPreviewOpen ? 'border-r border-border-color' : ''
+          }`}
+        >
+          <CodeMirror
+            value={content}
+            height="100%"
+            basicSetup={{ lineNumbers: true }}
+            extensions={extensions}
+            onChange={setContent}
+            onCreateEditor={view => setEditorView(view)}
+            theme="light"
+            className="h-full bg-card-background"
+          />
+        </div>
+        {isPreviewOpen ? (
+          <div
+            ref={previewRef}
+            className="flex-1 min-w-0 h-full overflow-auto p-4 text-foreground"
+          >
             <div className="markdown-body">
               <ReactMarkdown
                 remarkPlugins={previewPlugins}
@@ -190,17 +267,7 @@ export function Editor({ path, onPathChange }: EditorProps) {
               </ReactMarkdown>
             </div>
           </div>
-        ) : (
-          <CodeMirror
-            value={content}
-            height="100%"
-            basicSetup={{ lineNumbers: true }}
-            extensions={extensions}
-            onChange={setContent}
-            theme="light"
-            className="h-full bg-card-background"
-          />
-        )}
+        ) : null}
       </div>
     </div>
   )
