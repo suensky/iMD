@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..services import file_service, ai_service
+from ..services.ai_service import AIServiceError
 
 router = APIRouter()
 
@@ -23,14 +24,14 @@ def chat(body: ChatBody):
   file = file_service.read_file(body.path)
   content = file["content"]
 
-  if body.mode == "ask":
-    res = ai_service.ask(body.path, content, body.message)
-    return {"answer": res.answer}
-  elif body.mode == "edit":
-    try:
+  try:
+    if body.mode == "ask":
+      res = ai_service.ask(body.path, content, body.message)
+      return {"answer": res.answer}
+    elif body.mode == "edit":
       res = ai_service.edit(body.path, content, body.message)
-    except RuntimeError as e:
-      raise HTTPException(status_code=400, detail=str(e))
-    return {"proposedContent": res.proposedContent}
-  else:
-    raise HTTPException(status_code=400, detail="Invalid mode")
+      return {"proposedContent": res.proposedContent}
+  except AIServiceError as exc:
+    raise HTTPException(status_code=500, detail=str(exc))
+
+  raise HTTPException(status_code=400, detail="Invalid mode")
