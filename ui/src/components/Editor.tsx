@@ -6,7 +6,14 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeMathjax from 'rehype-mathjax'
-import { Eye, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import {
+  Eye,
+  FilePlus,
+  Loader2,
+  PanelRightClose,
+  PanelRightOpen,
+  Save as SaveIcon,
+} from 'lucide-react'
 import type { EditorView } from '@codemirror/view'
 import { readFile, writeFile } from '../lib/api'
 import {
@@ -230,20 +237,40 @@ export function Editor({ path, onPathChange }: EditorProps) {
     <div className="h-full flex flex-col">
       <div className="flex items-center gap-2 border-b border-border-color p-2 bg-card-background">
         <div className="text-sm text-text-secondary flex-1 truncate">{path}</div>
-        <button
-          className="px-3 py-1.5 text-sm rounded bg-primary text-white hover:opacity-90 disabled:opacity-60"
-          onClick={handleSave}
-          disabled={!isDirty || saveMut.isPending || saveAsMut.isPending}
-        >
-          {saveMut.isPending ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          className="px-3 py-1.5 text-sm rounded border border-border-color hover:bg-background"
-          onClick={handleSaveAs}
-          disabled={saveAsMut.isPending || saveMut.isPending}
-        >
-          {saveAsMut.isPending ? 'Saving…' : 'Save As'}
-        </button>
+        <Tooltip label="Save changes">
+          <button
+            type="button"
+            className={`p-2 rounded flex items-center justify-center disabled:opacity-60 ${
+              isDirty
+                ? 'bg-primary text-white hover:opacity-90'
+                : 'border border-border-color hover:bg-background text-text-secondary'
+            }`}
+            onClick={handleSave}
+            disabled={!isDirty || saveMut.isPending || saveAsMut.isPending}
+            aria-label="Save file"
+          >
+            {saveMut.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <SaveIcon className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
+        </Tooltip>
+        <Tooltip label="Save as new file">
+          <button
+            type="button"
+            className="p-2 rounded border border-border-color hover:bg-background text-text-secondary disabled:opacity-60 flex items-center justify-center"
+            onClick={handleSaveAs}
+            disabled={saveAsMut.isPending || saveMut.isPending}
+            aria-label="Save file as"
+          >
+            {saveAsMut.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <FilePlus className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
+        </Tooltip>
         <Tooltip label={`Current: ${previewModeLabels[previewMode]}. Next: ${previewModeLabels[nextMode]}`}>
           <button
             className="p-2 rounded border border-border-color hover:bg-background text-text-secondary"
