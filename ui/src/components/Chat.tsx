@@ -1,50 +1,90 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Bot, ChevronRight } from 'lucide-react'
-import { aiChat, writeFile } from '../lib/api'
+import { ArrowUp, Bot, ChevronRight, Copy } from 'lucide-react'
+import { aiChat } from '../lib/api'
 import { Tooltip } from './Tooltip'
 
 type ChatProps = {
   path?: string
-  onApplied?: () => void
   onCollapse?: () => void
   onExpand?: () => void
   isCollapsed?: boolean
 }
 
-export function Chat({ path, onApplied, onCollapse, onExpand, isCollapsed }: ChatProps) {
+export function Chat({ path, onCollapse, onExpand, isCollapsed }: ChatProps) {
   const [message, setMessage] = useState('')
   const [logs, setLogs] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([])
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
-  const askMut = useMutation({
-    mutationFn: async () => {
-      if (!path || !message.trim()) return
-      const res = await aiChat({ path, mode: 'ask', message })
+  const askMut = useMutation<{ answer: string }, Error, string, { placeholderIndex: number }>({
+    mutationFn: async (input) => {
+      if (!path) {
+        throw new Error('Cannot ask without an open file path.')
+      }
+      const res = await aiChat({ path, mode: 'ask', message: input })
       return res as { answer: string }
     },
-    onSuccess: (res) => {
-      setLogs((l) => [...l, { role: 'user', text: message }, { role: 'assistant', text: res.answer }])
-      setMessage('')
+    onMutate: (input) => {
+      let placeholderIndex = -1
+      const userEntry = { role: 'user' as const, text: input }
+      const placeholderEntry = { role: 'assistant' as const, text: 'Thinking…' }
+      setLogs((prev) => {
+        const next = [...prev, userEntry, placeholderEntry]
+        placeholderIndex = next.length - 1
+        return next
+      })
+      return { placeholderIndex }
+    },
+    onSuccess: (res, _input, context) => {
+      if (!context) return
+      setLogs((prev) => {
+        const next = [...prev]
+        if (next[context.placeholderIndex]) {
+          next[context.placeholderIndex] = { role: 'assistant', text: res.answer }
+        }
+        return next
+      })
+    },
+    onError: (_error, _input, context) => {
+      if (!context) return
+      setLogs((prev) => {
+        const next = [...prev]
+        if (next[context.placeholderIndex]) {
+          next[context.placeholderIndex] = {
+            role: 'assistant',
+            text: 'I ran into a hiccup answering just now. Please try again.',
+          }
+        }
+        return next
+      })
     },
   })
 
-  const editMut = useMutation({
-    mutationFn: async () => {
-      if (!path || !message.trim()) return
-      const res = await aiChat({ path, mode: 'edit', message })
-      if ('proposedContent' in res) {
-        await writeFile(path, res.proposedContent)
-      }
-      return res
-    },
-    onSuccess: (res) => {
-      if ('proposedContent' in res) {
-        setLogs((l) => [...l, { role: 'user', text: message }, { role: 'assistant', text: 'Applied proposed changes.' }])
-        setMessage('')
-        onApplied?.()
-      }
-    },
-  })
+  useEffect(() => {
+    if (!textareaRef.current) return
+    textareaRef.current.style.height = 'auto'
+    textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+  }, [message])
+
+  const isPending = askMut.isPending
+  const hasMessage = message.trim().length > 0
+
+  const handleSend = () => {
+    if (!path || !hasMessage || isPending) return
+    const content = message.trim()
+    setMessage('')
+    askMut.mutate(content)
+  }
+
+  const handleCopy = async (text: string) => {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) return
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to copy message', error)
+    }
+  }
 
   if (isCollapsed) {
     return (
@@ -92,37 +132,85 @@ export function Chat({ path, onApplied, onCollapse, onExpand, isCollapsed }: Cha
   return (
     <div className="h-full flex flex-col bg-card-background text-foreground">
       {header}
-      <div className="flex-1 overflow-auto p-4 space-y-3 text-sm border-b border-border-color">
-        {logs.map((m, i) => (
-          <div key={i} className={m.role === 'user' ? 'text-foreground' : 'text-primary'}>
-            <span className="font-semibold mr-2">{m.role === 'user' ? 'You' : 'AI'}:</span>
-            <span className="whitespace-pre-wrap">{m.text}</span>
-          </div>
-        ))}
+      <div className="flex-1 overflow-auto p-4 space-y-5 text-sm border-b border-border-color">
+        {logs.map((m, i) => {
+          const isUser = m.role === 'user'
+          return (
+            <div
+              key={`${m.role}-${i}`}
+              className={`group flex ${isUser ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`flex max-w-[85%] flex-col gap-2 ${
+                  isUser ? 'items-end text-foreground' : 'items-start text-foreground'
+                }`}
+              >
+                <div
+                  className={`w-fit rounded-2xl px-4 py-3 leading-6 ${
+                    isUser
+                      ? 'bg-white text-foreground border border-border-color shadow-sm'
+                      : 'text-foreground'
+                  }`}
+                >
+                  <span className="whitespace-pre-wrap">{m.text}</span>
+                </div>
+                {isUser ? (
+                  <Tooltip label="Copy message">
+                    <button
+                      type="button"
+                      aria-label="Copy message"
+                      onClick={() => handleCopy(m.text)}
+                      className="inline-flex items-center gap-1 text-xs text-text-secondary opacity-0 transition focus-visible:opacity-100 hover:text-foreground group-hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    >
+                      <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </Tooltip>
+                ) : null}
+              </div>
+            </div>
+          )
+        })}
       </div>
-      <div className="border-t border-border-color p-4 space-y-2">
-        <textarea
-          className="w-full h-24 rounded bg-card-background text-foreground p-2 border border-border-color focus:outline-none placeholder-text-secondary"
-          placeholder="Ask about or instruct changes to the open markdown..."
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-        />
-        <div className="flex gap-2 justify-end">
-          <button
-            className="px-3 py-1.5 text-sm rounded border border-border-color hover:bg-background"
-            onClick={() => askMut.mutate()}
-            disabled={askMut.isPending || editMut.isPending}
-          >
-            {askMut.isPending ? 'Asking…' : 'Ask'}
-          </button>
-          <button
-            className="px-3 py-1.5 text-sm rounded bg-primary text-white hover:opacity-90"
-            onClick={() => editMut.mutate()}
-            disabled={askMut.isPending || editMut.isPending}
-          >
-            {editMut.isPending ? 'Applying…' : 'Edit and Apply'}
-          </button>
-        </div>
+      <div className="border-t border-border-color p-4 space-y-3">
+        <form
+          className="space-y-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            handleSend()
+          }}
+        >
+          <div className="relative rounded-3xl border border-border-color bg-background/70 px-4 py-2.5 shadow-sm transition focus-within:border-primary focus-within:shadow-[0_0_0_1px_rgba(59,130,246,0.35)]">
+            <textarea
+              ref={textareaRef}
+              className="max-h-40 min-h-[24px] w-full resize-none bg-transparent pr-12 text-sm leading-5 text-foreground placeholder:text-text-secondary focus:outline-none"
+              placeholder="Ask about or instruct changes to the open markdown..."
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                  e.preventDefault()
+                  handleSend()
+                }
+              }}
+              rows={1}
+            />
+            <div className="pointer-events-none absolute bottom-2.5 right-2.5">
+              <button
+                type="submit"
+                className={`pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${
+                  hasMessage && !isPending
+                    ? 'bg-primary text-white hover:opacity-90'
+                    : 'bg-border-color text-text-secondary'
+                }`}
+                aria-label="Send message"
+                disabled={!hasMessage || isPending}
+              >
+                <ArrowUp className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+          <p className="text-xs text-text-secondary">Press Enter to send, Shift+Enter for a newline.</p>
+        </form>
       </div>
     </div>
   )
