@@ -6,7 +6,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeMathjax from 'rehype-mathjax'
-import { PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Eye, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import type { EditorView } from '@codemirror/view'
 import { readFile, writeFile } from '../lib/api'
 import {
@@ -59,6 +59,14 @@ type EditorProps = {
   onPathChange?: (next: string) => void
 }
 
+type PreviewMode = 'editor' | 'split' | 'preview'
+const previewModeOrder: PreviewMode[] = ['editor', 'split', 'preview']
+const previewModeLabels: Record<PreviewMode, string> = {
+  editor: 'Editor only',
+  split: 'Split view',
+  preview: 'Preview only',
+}
+
 export function Editor({ path, onPathChange }: EditorProps) {
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery({
@@ -71,7 +79,7 @@ export function Editor({ path, onPathChange }: EditorProps) {
   })
 
   const [content, setContent] = useState('')
-  const [isPreviewOpen, setPreviewOpen] = useState(false)
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('editor')
   const [editorView, setEditorView] = useState<EditorView | null>(null)
   const previewRef = useRef<HTMLDivElement | null>(null)
   const scrollSyncLockRef = useRef<'editor' | 'preview' | null>(null)
@@ -133,6 +141,8 @@ export function Editor({ path, onPathChange }: EditorProps) {
   const isDirty = content !== (data?.content ?? '')
 
   useEffect(() => {
+    if (previewMode !== 'split') return
+
     const editorScrollEl = editorView?.scrollDOM
     const previewScrollEl = previewRef.current
 
@@ -178,7 +188,7 @@ export function Editor({ path, onPathChange }: EditorProps) {
       if (frame) cancelAnimationFrame(frame)
       scrollSyncLockRef.current = null
     }
-  }, [editorView, isPreviewOpen])
+  }, [editorView, previewMode])
 
   const handleSave = () => {
     if (!path || !isDirty) return
@@ -206,6 +216,16 @@ export function Editor({ path, onPathChange }: EditorProps) {
   if (isLoading) return <div className="p-4 text-sm text-text-secondary">Loading...</div>
   if (error) return <div className="p-4 text-sm text-red-500">Failed to load file.</div>
 
+  const cyclePreviewMode = () => {
+    setPreviewMode(prev => {
+      const idx = previewModeOrder.indexOf(prev)
+      const nextIdx = (idx + 1) % previewModeOrder.length
+      return previewModeOrder[nextIdx]
+    })
+  }
+
+  const nextMode = previewModeOrder[(previewModeOrder.indexOf(previewMode) + 1) % previewModeOrder.length]
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center gap-2 border-b border-border-color p-2 bg-card-background">
@@ -224,41 +244,47 @@ export function Editor({ path, onPathChange }: EditorProps) {
         >
           {saveAsMut.isPending ? 'Saving…' : 'Save As'}
         </button>
-        <Tooltip label="Preview">
+        <Tooltip label={`Current: ${previewModeLabels[previewMode]}. Next: ${previewModeLabels[nextMode]}`}>
           <button
             className="p-2 rounded border border-border-color hover:bg-background text-text-secondary"
-            onClick={() => setPreviewOpen(p => !p)}
-            aria-label={isPreviewOpen ? 'Close preview' : 'Open preview'}
+            onClick={cyclePreviewMode}
+            aria-label={`Change view (current: ${previewModeLabels[previewMode]})`}
           >
-            {isPreviewOpen ? (
+            {previewMode === 'editor' ? (
+              <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
+            ) : previewMode === 'split' ? (
               <PanelRightClose className="h-4 w-4" aria-hidden="true" />
             ) : (
-              <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
+              <Eye className="h-4 w-4" aria-hidden="true" />
             )}
           </button>
         </Tooltip>
       </div>
       <div className="flex-1 min-h-0 flex bg-card-background">
-        <div
-          className={`flex-1 min-w-0 h-full ${
-            isPreviewOpen ? 'border-r border-border-color' : ''
-          }`}
-        >
-          <CodeMirror
-            value={content}
-            height="100%"
-            basicSetup={{ lineNumbers: true }}
-            extensions={extensions}
-            onChange={setContent}
-            onCreateEditor={view => setEditorView(view)}
-            theme="light"
-            className="h-full bg-card-background"
-          />
-        </div>
-        {isPreviewOpen ? (
+        {previewMode !== 'preview' ? (
+          <div
+            className={`flex-1 min-w-0 h-full ${
+              previewMode === 'split' ? 'border-r border-border-color' : ''
+            }`}
+          >
+            <CodeMirror
+              value={content}
+              height="100%"
+              basicSetup={{ lineNumbers: true }}
+              extensions={extensions}
+              onChange={setContent}
+              onCreateEditor={view => setEditorView(view)}
+              theme="light"
+              className="h-full bg-card-background"
+            />
+          </div>
+        ) : null}
+        {previewMode !== 'editor' ? (
           <div
             ref={previewRef}
-            className="flex-1 min-w-0 h-full overflow-auto p-4 text-foreground"
+            className={`flex-1 min-w-0 h-full overflow-auto p-4 text-foreground ${
+              previewMode === 'preview' ? 'border-0' : ''
+            }`}
           >
             <div className="markdown-body">
               <ReactMarkdown
