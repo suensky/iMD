@@ -4,6 +4,13 @@ import { ArrowUp, Bot, ChevronRight, Copy } from 'lucide-react'
 import { aiChat } from '../lib/api'
 import { Tooltip } from './Tooltip'
 
+type ChatLogEntry = {
+  id: string
+  role: 'user' | 'assistant'
+  text: string
+  status?: 'pending' | 'done'
+}
+
 type ChatProps = {
   path?: string
   onCollapse?: () => void
@@ -11,12 +18,19 @@ type ChatProps = {
   isCollapsed?: boolean
 }
 
+const createEntryId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return Math.random().toString(36).slice(2, 10)
+}
+
 export function Chat({ path, onCollapse, onExpand, isCollapsed }: ChatProps) {
   const [message, setMessage] = useState('')
-  const [logs, setLogs] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([])
+  const [logs, setLogs] = useState<ChatLogEntry[]>([])
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
-  const askMut = useMutation<{ answer: string }, Error, string, { placeholderIndex: number }>({
+  const askMut = useMutation<{ answer: string }, Error, string, { placeholderId: string }>({
     mutationFn: async (input) => {
       if (!path) {
         throw new Error('Cannot ask without an open file path.')
@@ -25,38 +39,40 @@ export function Chat({ path, onCollapse, onExpand, isCollapsed }: ChatProps) {
       return res as { answer: string }
     },
     onMutate: (input) => {
-      let placeholderIndex = -1
-      const userEntry = { role: 'user' as const, text: input }
-      const placeholderEntry = { role: 'assistant' as const, text: 'Thinking…' }
-      setLogs((prev) => {
-        const next = [...prev, userEntry, placeholderEntry]
-        placeholderIndex = next.length - 1
-        return next
-      })
-      return { placeholderIndex }
+      const userEntry: ChatLogEntry = { id: createEntryId(), role: 'user', text: input }
+      const placeholderId = createEntryId()
+      const placeholderEntry: ChatLogEntry = {
+        id: placeholderId,
+        role: 'assistant',
+        text: 'Thinking…',
+        status: 'pending',
+      }
+      setLogs((prev) => [...prev, userEntry, placeholderEntry])
+      return { placeholderId }
     },
     onSuccess: (res, _input, context) => {
       if (!context) return
-      setLogs((prev) => {
-        const next = [...prev]
-        if (next[context.placeholderIndex]) {
-          next[context.placeholderIndex] = { role: 'assistant', text: res.answer }
-        }
-        return next
-      })
+      setLogs((prev) =>
+        prev.map((entry) =>
+          entry.id === context.placeholderId
+            ? { ...entry, text: res.answer, status: 'done' }
+            : entry,
+        ),
+      )
     },
     onError: (_error, _input, context) => {
       if (!context) return
-      setLogs((prev) => {
-        const next = [...prev]
-        if (next[context.placeholderIndex]) {
-          next[context.placeholderIndex] = {
-            role: 'assistant',
-            text: 'I ran into a hiccup answering just now. Please try again.',
-          }
-        }
-        return next
-      })
+      setLogs((prev) =>
+        prev.map((entry) =>
+          entry.id === context.placeholderId
+            ? {
+                ...entry,
+                text: 'I ran into a hiccup answering just now. Please try again.',
+                status: 'done',
+              }
+            : entry,
+        ),
+      )
     },
   })
 
@@ -81,7 +97,6 @@ export function Chat({ path, onCollapse, onExpand, isCollapsed }: ChatProps) {
     try {
       await navigator.clipboard.writeText(text)
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error('Failed to copy message', error)
     }
   }
@@ -133,11 +148,11 @@ export function Chat({ path, onCollapse, onExpand, isCollapsed }: ChatProps) {
     <div className="h-full flex flex-col bg-card-background text-foreground">
       {header}
       <div className="flex-1 overflow-auto p-4 space-y-5 text-sm border-b border-border-color">
-        {logs.map((m, i) => {
+        {logs.map((m) => {
           const isUser = m.role === 'user'
           return (
             <div
-              key={`${m.role}-${i}`}
+              key={m.id}
               className={`group flex ${isUser ? 'justify-end' : 'justify-start'}`}
             >
               <div

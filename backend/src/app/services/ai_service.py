@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 from dataclasses import dataclass
@@ -8,7 +9,16 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from openai import OpenAI
+
+from agents import (
+    Agent,
+    ModelSettings,
+    Runner,
+    set_default_openai_client,
+    set_default_openai_key,
+)
+from agents.exceptions import AgentsException
+from openai import AsyncOpenAI
 
 
 class AIServiceError(RuntimeError):
@@ -46,9 +56,46 @@ def _get_settings() -> _AISettings:
 
 
 @lru_cache(maxsize=1)
-def _get_client() -> OpenAI:
+def _configure_openai_client() -> None:
+    """Configure the global Agents SDK client once based on environment settings."""
     settings = _get_settings()
-    return OpenAI(api_key=settings.api_key, base_url=settings.base_url)
+    set_default_openai_key(settings.api_key)
+    if settings.base_url:
+        client = AsyncOpenAI(api_key=settings.api_key, base_url=settings.base_url)
+        set_default_openai_client(client)
+
+
+@lru_cache(maxsize=1)
+def _get_ask_agent() -> Agent[None]:
+    """Create a reusable agent for answering questions about markdown content."""
+    _configure_openai_client()
+    settings = _get_settings()
+    return Agent(
+        name="Markdown QA",
+        instructions=(
+            "You are an expert technical writer and editor for Markdown documents. "
+            "Answer questions precisely and concisely based on the provided content."
+        ),
+        model=settings.model,
+        model_settings=ModelSettings(temperature=0.2),
+    )
+
+
+@lru_cache(maxsize=1)
+def _get_edit_agent() -> Agent[None]:
+    """Create a reusable agent for editing markdown documents."""
+    _configure_openai_client()
+    settings = _get_settings()
+    return Agent(
+        name="Markdown Editor",
+        instructions=(
+            "You are an expert Markdown editor. Always return the FULL UPDATED MARKDOWN "
+            "inside a single fenced code block using the language identifier 'markdown'. "
+            "Do not include any commentary outside the code fence."
+        ),
+        model=settings.model,
+        model_settings=ModelSettings(temperature=0.1),
+    )
 
 
 @dataclass
@@ -61,66 +108,57 @@ class EditResult:
     proposedContent: str
 
 
-def _format_messages(system: str, user: str) -> list[dict]:
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ]
+def _run_agent(agent: Agent[None], prompt: str) -> str:
+    def _process(result: object) -> str:
+        if not hasattr(result, "final_output"):
+            raise AIServiceError("Agent returned an unexpected payload.")
+        output = getattr(result, "final_output", None)
+        if output is None:
+            raise AIServiceError("Agent returned no output.")
+        if not isinstance(output, str):
+            output = str(output)
+        trimmed = output.strip()
+        if not trimmed:
+            raise AIServiceError("Agent returned an empty response.")
+        return trimmed
 
+    def _run_sync() -> str:
+        try:
+            result = Runner.run_sync(agent, prompt)
+        except AgentsException as exc:
+            raise AIServiceError(f"Agent run failed: {exc}") from exc
+        except Exception as exc:  # pragma: no cover - safety net for unexpected errors
+            raise AIServiceError("Unexpected error while running the AI agent.") from exc
+        return _process(result)
 
-def _run_agent(messages: list[dict], temperature: float = 0.2) -> str:
-    client = _get_client()
-    settings = _get_settings()
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            return _run_sync()
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
 
-    # Prefer Responses API when available (new Agent SDK surface)
-    if hasattr(client, "responses"):
-        formatted_input = [
-            {
-                "role": m["role"],
-                "content": [{"type": "text", "text": m["content"]}],
-            }
-            for m in messages
-        ]
-        response = client.responses.create(
-            model=settings.model,
-            input=formatted_input,
-            temperature=temperature,
-        )
-        output_chunks: list[str] = []
-        for item in getattr(response, "output", []):
-            if getattr(item, "type", "") != "message":
-                continue
-            for block in getattr(item, "content", []):
-                if getattr(block, "type", "") == "text":
-                    output_chunks.append(block.text.value)
-        if not output_chunks:
-            fallback_text = getattr(response, "output_text", None)
-            if fallback_text:
-                return fallback_text.strip()
-            raise AIServiceError("OpenAI agent response was empty.")
-        return "\n\n".join(chunk.strip() for chunk in output_chunks if chunk).strip()
+    if loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(Runner.run(agent, prompt), loop)
+        try:
+            result = future.result()
+        except AgentsException as exc:
+            raise AIServiceError(f"Agent run failed: {exc}") from exc
+        except Exception as exc:  # pragma: no cover - safety net for unexpected errors
+            raise AIServiceError("Unexpected error while running the AI agent.") from exc
+        return _process(result)
 
-    # Fallback to Chat Completions for older SDKs
-    response = client.chat.completions.create(
-        model=settings.model,
-        messages=messages,
-        temperature=temperature,
-    )
-    content = ""
-    if response.choices:
-        content = response.choices[0].message.content or ""
-    if not content:
-        raise AIServiceError("OpenAI agent response was empty.")
-    return content.strip()
+    return _run_sync()
 
 
 def ask(path: str, content: str, message: str) -> AskResult:
-    system = (
-        "You are an expert technical writer and editor for Markdown documents. "
-        "Answer questions precisely and concisely based on the provided content."
-    )
-    user = f"File: {path}\n\nContent:\n\n{content}\n\nQuestion: {message}"
-    answer = _run_agent(_format_messages(system, user))
+    agent = _get_ask_agent()
+    prompt = f"File: {path}\n\nContent:\n\n{content}\n\nQuestion: {message}"
+    answer = _run_agent(agent, prompt)
     return AskResult(answer=answer)
 
 
@@ -135,17 +173,13 @@ def _extract_markdown(text: str) -> str:
 
 
 def edit(path: str, content: str, message: str) -> EditResult:
-    system = (
-        "You are an expert Markdown editor. Given a Markdown file and an instruction, "
-        "return the FULL UPDATED MARKDOWN inside a single fenced code block with language 'markdown'. "
-        "Do not include any commentary outside the code fence."
-    )
-    user = (
+    agent = _get_edit_agent()
+    prompt = (
         f"File: {path}\n\nCurrent Markdown content:\n\n{content}\n\nInstruction:\n{message}\n\n"
-        "Respond ONLY with a single fenced code block containing the full updated markdown."
+        "Remember to respond ONLY with a single fenced code block containing the full updated markdown."
     )
-    raw = _run_agent(_format_messages(system, user))
+    raw = _run_agent(agent, prompt)
     proposed = _extract_markdown(raw)
     if not proposed:
-        raise AIServiceError("OpenAI agent returned an empty edit.")
+        raise AIServiceError("Agent returned an empty edit.")
     return EditResult(proposedContent=proposed)
