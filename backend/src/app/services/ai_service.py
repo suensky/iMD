@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import os
 import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from dotenv import load_dotenv
 
@@ -19,6 +19,8 @@ from agents import (
 )
 from agents.exceptions import AgentsException
 from openai import AsyncOpenAI
+from openai.types.responses import ResponseTextDeltaEvent
+from agents.stream_events import RawResponsesStreamEvent
 
 
 class AIServiceError(RuntimeError):
@@ -98,68 +100,53 @@ def _get_edit_agent() -> Agent[None]:
     )
 
 
-@dataclass
-class AskResult:
-    answer: str
+def _normalize_output(output: object) -> str:
+    if output is None:
+        raise AIServiceError("Agent returned no output.")
+    if not isinstance(output, str):
+        output = str(output)
+    trimmed = output.strip()
+    if not trimmed:
+        raise AIServiceError("Agent returned an empty response.")
+    return trimmed
 
 
 @dataclass
-class EditResult:
-    proposedContent: str
+class StreamChunk:
+    type: Literal["delta", "final"]
+    text: str
 
 
-def _run_agent(agent: Agent[None], prompt: str) -> str:
-    def _process(result: object) -> str:
-        if not hasattr(result, "final_output"):
-            raise AIServiceError("Agent returned an unexpected payload.")
-        output = getattr(result, "final_output", None)
-        if output is None:
-            raise AIServiceError("Agent returned no output.")
-        if not isinstance(output, str):
-            output = str(output)
-        trimmed = output.strip()
-        if not trimmed:
-            raise AIServiceError("Agent returned an empty response.")
-        return trimmed
-
-    def _run_sync() -> str:
-        try:
-            result = Runner.run_sync(agent, prompt)
-        except AgentsException as exc:
-            raise AIServiceError(f"Agent run failed: {exc}") from exc
-        except Exception as exc:  # pragma: no cover - safety net for unexpected errors
-            raise AIServiceError("Unexpected error while running the AI agent.") from exc
-        return _process(result)
+async def _stream_agent(agent: Agent[None], prompt: str) -> AsyncIterator[StreamChunk]:
+    try:
+        run = Runner.run_streamed(agent, prompt)
+    except AgentsException as exc:  # pragma: no cover - defensive: construction errors
+        raise AIServiceError(f"Agent run failed: {exc}") from exc
+    except Exception as exc:  # pragma: no cover - safety net for unexpected errors
+        raise AIServiceError("Unexpected error while starting the AI agent.") from exc
 
     try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            asyncio.set_event_loop(loop)
-            return _run_sync()
-        finally:
-            asyncio.set_event_loop(None)
-            loop.close()
+        async for event in run.stream_events():
+            if isinstance(event, RawResponsesStreamEvent):
+                data = event.data
+                if isinstance(data, ResponseTextDeltaEvent):
+                    delta = data.delta or ""
+                    if delta:
+                        yield StreamChunk(type="delta", text=delta)
+    except AgentsException as exc:
+        raise AIServiceError(f"Agent run failed: {exc}") from exc
+    except Exception as exc:  # pragma: no cover - safety net for unexpected errors
+        raise AIServiceError("Unexpected error while running the AI agent.") from exc
 
-    if loop.is_running():
-        future = asyncio.run_coroutine_threadsafe(Runner.run(agent, prompt), loop)
-        try:
-            result = future.result()
-        except AgentsException as exc:
-            raise AIServiceError(f"Agent run failed: {exc}") from exc
-        except Exception as exc:  # pragma: no cover - safety net for unexpected errors
-            raise AIServiceError("Unexpected error while running the AI agent.") from exc
-        return _process(result)
-
-    return _run_sync()
+    final_output = _normalize_output(getattr(run, "final_output", None))
+    yield StreamChunk(type="final", text=final_output)
 
 
-def ask(path: str, content: str, message: str) -> AskResult:
+async def ask(path: str, content: str, message: str) -> AsyncIterator[StreamChunk]:
     agent = _get_ask_agent()
     prompt = f"File: {path}\n\nContent:\n\n{content}\n\nQuestion: {message}"
-    answer = _run_agent(agent, prompt)
-    return AskResult(answer=answer)
+    async for chunk in _stream_agent(agent, prompt):
+        yield chunk
 
 
 _FENCE_RE = re.compile(r"```(?:markdown|md)?\n([\s\S]*?)\n```", re.IGNORECASE)
@@ -172,14 +159,17 @@ def _extract_markdown(text: str) -> str:
     return text.strip()
 
 
-def edit(path: str, content: str, message: str) -> EditResult:
+async def edit(path: str, content: str, message: str) -> AsyncIterator[StreamChunk]:
     agent = _get_edit_agent()
     prompt = (
         f"File: {path}\n\nCurrent Markdown content:\n\n{content}\n\nInstruction:\n{message}\n\n"
         "Remember to respond ONLY with a single fenced code block containing the full updated markdown."
     )
-    raw = _run_agent(agent, prompt)
-    proposed = _extract_markdown(raw)
-    if not proposed:
-        raise AIServiceError("Agent returned an empty edit.")
-    return EditResult(proposedContent=proposed)
+    async for chunk in _stream_agent(agent, prompt):
+        if chunk.type == "final":
+            proposed = _extract_markdown(chunk.text)
+            if not proposed:
+                raise AIServiceError("Agent returned an empty edit.")
+            yield StreamChunk(type="final", text=proposed)
+        else:
+            yield chunk

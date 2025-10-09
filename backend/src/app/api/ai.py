@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..services import file_service, ai_service
@@ -29,7 +31,7 @@ def _preview(text: str, limit: int = 120) -> str:
 
 
 @router.post("/ai/chat")
-def chat(body: ChatBody):
+async def chat(body: ChatBody):
   logger.info(
       "Received AI chat request path=%s mode=%s message_len=%d selection_present=%s",
       body.path,
@@ -47,35 +49,48 @@ def chat(body: ChatBody):
       len(content),
   )
 
-  try:
-    if body.mode == "ask":
-      res = ai_service.ask(body.path, content, body.message)
-      logger.info(
-          "AI ask result path=%s answer_preview=%s",
-          body.path,
-          _preview(res.answer),
-      )
-      return {"answer": res.answer}
-    elif body.mode == "edit":
-      res = ai_service.edit(body.path, content, body.message)
-      logger.info(
-          "AI edit result path=%s proposed_len=%d preview=%s",
-          body.path,
-          len(res.proposedContent),
-          _preview(res.proposedContent),
-      )
-      return {"proposedContent": res.proposedContent}
-  except AIServiceError as exc:
-    logger.exception(
-        "AI service error path=%s mode=%s",
+  if body.mode not in {"ask", "edit"}:
+    logger.warning(
+        "Invalid AI chat mode received path=%s mode=%s",
         body.path,
         body.mode,
     )
-    raise HTTPException(status_code=500, detail=str(exc))
+    raise HTTPException(status_code=400, detail="Invalid mode")
 
-  logger.warning(
-      "Invalid AI chat mode received path=%s mode=%s",
-      body.path,
-      body.mode,
-  )
-  raise HTTPException(status_code=400, detail="Invalid mode")
+  async def _event_stream():
+    try:
+      if body.mode == "ask":
+        stream = ai_service.ask(body.path, content, body.message)
+      else:
+        stream = ai_service.edit(body.path, content, body.message)
+
+      async for chunk in stream:
+        if chunk.type == "delta":
+          payload = {"type": "delta", "text": chunk.text}
+        else:
+          if body.mode == "ask":
+            logger.info(
+                "AI ask result path=%s answer_preview=%s",
+                body.path,
+                _preview(chunk.text),
+            )
+            payload = {"type": "final", "answer": chunk.text}
+          else:
+            logger.info(
+                "AI edit result path=%s proposed_len=%d preview=%s",
+                body.path,
+                len(chunk.text),
+                _preview(chunk.text),
+            )
+            payload = {"type": "final", "proposedContent": chunk.text}
+
+        yield (json.dumps(payload) + "\n").encode("utf-8")
+    except AIServiceError as exc:
+      logger.exception(
+          "AI service error path=%s mode=%s",
+          body.path,
+          body.mode,
+      )
+      raise HTTPException(status_code=500, detail=str(exc))
+
+  return StreamingResponse(_event_stream(), media_type="application/jsonl")

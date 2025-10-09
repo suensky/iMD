@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { ArrowUp, Bot, ChevronRight, Copy } from 'lucide-react'
-import { aiChat } from '../lib/api'
+import { aiChatStream } from '../lib/api'
 import { Tooltip } from './Tooltip'
 
 type ChatLogEntry = {
@@ -29,18 +29,44 @@ export function Chat({ path, onCollapse, onExpand, isCollapsed }: ChatProps) {
   const [message, setMessage] = useState('')
   const [logs, setLogs] = useState<ChatLogEntry[]>([])
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const placeholderIdRef = useRef<string | null>(null)
 
-  const askMut = useMutation<{ answer: string }, Error, string, { placeholderId: string }>({
+  const askMut = useMutation<void, Error, string>({
     mutationFn: async (input) => {
       if (!path) {
         throw new Error('Cannot ask without an open file path.')
       }
-      const res = await aiChat({ path, mode: 'ask', message: input })
-      return res as { answer: string }
+      const placeholderId = placeholderIdRef.current
+      if (!placeholderId) {
+        throw new Error('Missing placeholder entry for streaming response.')
+      }
+      let buffer = ''
+      await aiChatStream(
+        { path, mode: 'ask', message: input },
+        (event) => {
+          if (event.type === 'delta') {
+            buffer += event.text
+            setLogs((prev) =>
+              prev.map((entry) =>
+                entry.id === placeholderId ? { ...entry, text: buffer } : entry,
+              ),
+            )
+          } else {
+            const finalText = 'answer' in event ? event.answer : event.proposedContent
+            buffer = finalText
+            setLogs((prev) =>
+              prev.map((entry) =>
+                entry.id === placeholderId ? { ...entry, text: finalText, status: 'done' } : entry,
+              ),
+            )
+          }
+        },
+      )
     },
     onMutate: (input) => {
       const userEntry: ChatLogEntry = { id: createEntryId(), role: 'user', text: input }
       const placeholderId = createEntryId()
+      placeholderIdRef.current = placeholderId
       const placeholderEntry: ChatLogEntry = {
         id: placeholderId,
         role: 'assistant',
@@ -48,23 +74,13 @@ export function Chat({ path, onCollapse, onExpand, isCollapsed }: ChatProps) {
         status: 'pending',
       }
       setLogs((prev) => [...prev, userEntry, placeholderEntry])
-      return { placeholderId }
     },
-    onSuccess: (res, _input, context) => {
-      if (!context) return
+    onError: () => {
+      const placeholderId = placeholderIdRef.current
+      if (!placeholderId) return
       setLogs((prev) =>
         prev.map((entry) =>
-          entry.id === context.placeholderId
-            ? { ...entry, text: res.answer, status: 'done' }
-            : entry,
-        ),
-      )
-    },
-    onError: (_error, _input, context) => {
-      if (!context) return
-      setLogs((prev) =>
-        prev.map((entry) =>
-          entry.id === context.placeholderId
+          entry.id === placeholderId
             ? {
                 ...entry,
                 text: 'I ran into a hiccup answering just now. Please try again.',
@@ -73,6 +89,9 @@ export function Chat({ path, onCollapse, onExpand, isCollapsed }: ChatProps) {
             : entry,
         ),
       )
+    },
+    onSettled: () => {
+      placeholderIdRef.current = null
     },
   })
 
