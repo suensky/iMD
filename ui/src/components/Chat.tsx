@@ -150,23 +150,15 @@ export function Chat({ path, onCollapse, onExpand, isCollapsed }: ChatProps) {
       <div className="flex-1 overflow-auto p-4 space-y-5 text-sm border-b border-border-color">
         {logs.map((m) => {
           const isUser = m.role === 'user'
+          const containerClass = isUser ? 'group chat-container' : 'group flex justify-start'
+          const alignmentClass = isUser ? 'items-end text-foreground' : 'items-start text-foreground'
+          const bubbleClass = isUser
+            ? 'chat-bubble'
+            : 'w-fit rounded-2xl px-4 py-3 leading-6 text-foreground'
           return (
-            <div
-              key={m.id}
-              className={`group flex ${isUser ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`flex max-w-[85%] flex-col gap-2 ${
-                  isUser ? 'items-end text-foreground' : 'items-start text-foreground'
-                }`}
-              >
-                <div
-                  className={`w-fit rounded-2xl px-4 py-3 leading-6 ${
-                    isUser
-                      ? 'bg-white text-foreground border border-border-color shadow-sm'
-                      : 'text-foreground'
-                  }`}
-                >
+            <div key={m.id} className={containerClass}>
+              <div className={`flex max-w-[85%] flex-col gap-2 ${alignmentClass}`}>
+                <div className={bubbleClass}>
                   <span className="whitespace-pre-wrap">{m.text}</span>
                 </div>
                 {isUser ? (
