@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import {
+  Panel,
+  PanelGroup,
+  PanelResizeHandle,
+  type ImperativePanelHandle,
+} from 'react-resizable-panels'
 import type { LucideIcon } from 'lucide-react'
 import {
+  ChevronLeft,
   Code2,
   FileText,
   Image,
@@ -18,6 +25,7 @@ import { WorkspaceView } from './components/WorkspaceView'
 import { Sidebar } from './components/Sidebar'
 import seastarLogoUrl from './assets/seastar-logo.svg'
 import { listFiles, type FileNode } from './lib/api'
+import { Tooltip } from './components/Tooltip'
 
 type ViewKey = 'ai-chat' | 'ai-notes' | 'ai-voice' | 'ai-code' | 'ai-images'
 
@@ -50,8 +58,9 @@ function App() {
   const [dropdownOpen, setDropdownOpen] = useState(true)
   const [profileOpen, setProfileOpen] = useState(false)
   const [aiNotesSelectedPath, setAiNotesSelectedPath] = useState<string | undefined>()
-  const [aiNotesSidebarCollapsed, setAiNotesSidebarCollapsed] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
 
+  const sidebarPanelRef = useRef<ImperativePanelHandle | null>(null)
   const profileRef = useRef<HTMLDivElement | null>(null)
   const previousDropdownStateRef = useRef(true)
 
@@ -65,6 +74,23 @@ function App() {
     () => (fileTree ?? []).filter((file: FileNode) => !file.is_dir && file.name.endsWith('.md')),
     [fileTree],
   )
+
+  const isNotesView = activeView === 'ai-notes'
+  const shouldShowNewChat = activeView === 'ai-chat'
+  const menuExpanded = shouldShowNewChat && dropdownOpen
+
+  const toggleSidebar = () => {
+    if (isSidebarCollapsed) {
+      sidebarPanelRef.current?.expand()
+    } else {
+      sidebarPanelRef.current?.collapse()
+    }
+  }
+
+  const collapseLabel = isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
+  const headerClassName = isSidebarCollapsed
+    ? 'flex items-center justify-center px-2 py-4'
+    : 'flex items-center justify-between px-4 py-4'
 
   useEffect(() => {
     if (!profileOpen) return
@@ -81,33 +107,30 @@ function App() {
   }, [profileOpen])
 
   useEffect(() => {
-    if (activeView !== 'ai-notes') return
-    previousDropdownStateRef.current = dropdownOpen
-    if (dropdownOpen) {
-      setDropdownOpen(false)
+    if (shouldShowNewChat) {
+      setDropdownOpen(previousDropdownStateRef.current)
+      return
     }
-  }, [activeView, dropdownOpen])
+    previousDropdownStateRef.current = dropdownOpen
+  }, [shouldShowNewChat, dropdownOpen])
 
   useEffect(() => {
-    if (activeView === 'ai-notes') return
-    setDropdownOpen(previousDropdownStateRef.current)
-  }, [activeView])
-
-  useEffect(() => {
-    if (activeView !== 'ai-notes') return
+    if (!isNotesView) return
     setAiNotesSelectedPath(current => {
       if (!markdownFiles.length) return undefined
       const stillExists = current && markdownFiles.some(file => file.path === current)
       if (stillExists) return current
       return markdownFiles[0]?.path
     })
-  }, [activeView, markdownFiles])
+  }, [isNotesView, markdownFiles])
 
-  useEffect(() => {
-    if (activeView === 'ai-notes') {
-      setAiNotesSidebarCollapsed(false)
+  const handleLogoClick = () => {
+    if (isSidebarCollapsed) {
+      sidebarPanelRef.current?.expand()
+      return
     }
-  }, [activeView])
+    setActiveView('ai-chat')
+  }
 
   const renderActiveView = () => {
     switch (activeView) {
@@ -148,121 +171,198 @@ function App() {
   }
 
   return (
-    <div className="flex h-full bg-background text-foreground font-display">
-      <aside className="flex w-60 flex-col border-r border-border-color bg-card-background">
-        <div className="flex items-center px-5 py-4">
-          <button
-            type="button"
-            className="flex items-center gap-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            onClick={() => setActiveView('ai-chat')}
-          >
-            <span className="inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-border-color bg-card-background">
-              <img
-                src={seastarLogoUrl}
-                alt="SeaStar logo"
-                className="h-10 w-10 object-cover"
-              />
-            </span>
-            <span className="text-lg font-semibold">SeaStar</span>
-          </button>
-        </div>
-        <div className="mt-8 px-4">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between rounded-lg bg-primary px-4 py-3 text-white shadow-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            onClick={() => setDropdownOpen(prev => !prev)}
-            aria-expanded={dropdownOpen}
-            aria-controls="main-sidebar-menu"
-          >
-            <span className="text-sm font-medium uppercase tracking-wide">New Chat</span>
-            <Plus className={`h-5 w-5 transition-transform ${dropdownOpen ? 'rotate-45' : ''}`} />
-          </button>
-          <div
-            id="main-sidebar-menu"
-            className={`mt-2 space-y-1 overflow-hidden transition-all duration-300 ${
-              dropdownOpen ? 'max-h-[520px] opacity-100' : 'max-h-0 opacity-0'
-            }`}
-          >
-            {menuItems.map(item => {
-              const Icon = item.icon
-              const isActive = activeView === item.key
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setActiveView(item.key)}
-                  className={`flex w-full items-center rounded-lg p-3 text-left text-sm font-medium transition ${
-                    isActive
-                      ? 'bg-gray-100 text-foreground'
-                      : 'text-foreground hover:bg-gray-100 hover:text-foreground'
-                  }`}
-                >
-                  <Icon className={`mr-3 h-5 w-5 ${item.iconClassName}`} aria-hidden="true" />
-              <span>{item.label}</span>
-            </button>
-          )
-        })}
-          </div>
-        </div>
-        {activeView === 'ai-notes' ? (
-          <div className="mt-4 flex-1 overflow-hidden px-4">
-            <Sidebar
-              variant="embedded"
-              className="h-full"
-              selectedPath={aiNotesSelectedPath}
-              onSelect={path => setAiNotesSelectedPath(path)}
-              onCollapse={() => setAiNotesSidebarCollapsed(true)}
-              onExpand={() => setAiNotesSidebarCollapsed(false)}
-              isCollapsed={aiNotesSidebarCollapsed}
-            />
-          </div>
-        ) : (
-          <div className="flex-1" />
-        )}
-        <div className="px-4 pb-4" ref={profileRef}>
-          <div className="relative">
-            <button
-              type="button"
-              className="flex w-full items-center rounded-lg p-3 text-left text-sm font-medium text-foreground transition hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              onClick={() => setProfileOpen(prev => !prev)}
-              aria-expanded={profileOpen}
-              aria-controls="profile-menu"
-            >
-              <UserCircle className="mr-3 h-6 w-6 text-text-secondary" aria-hidden="true" />
-              <span>User Profile</span>
-            </button>
-            <div
-              id="profile-menu"
-              className={`absolute left-0 bottom-full mb-2 w-full rounded-lg bg-white py-1 shadow-lg transition-opacity duration-200 ${
-                profileOpen ? 'visible opacity-100' : 'invisible opacity-0'
-              }`}
-            >
+    <div className="h-full bg-background text-foreground font-display">
+      <PanelGroup direction="horizontal" className="h-full">
+        <Panel
+          ref={sidebarPanelRef}
+          collapsible
+          defaultSize={24}
+          minSize={0}
+          minSizePx={180}
+          maxSize={40}
+          collapsedSize={6}
+          onCollapse={() => setIsSidebarCollapsed(true)}
+          onExpand={() => setIsSidebarCollapsed(false)}
+          className="h-full"
+        >
+          <aside className="flex h-full flex-col border-r border-border-color bg-card-background">
+            <div className={headerClassName}>
               <button
                 type="button"
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-foreground transition hover:bg-gray-100"
+                className={`flex items-center gap-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${isSidebarCollapsed ? 'justify-center' : ''}`}
+                onClick={handleLogoClick}
               >
-                <LogIn className="h-4 w-4 text-text-secondary" aria-hidden="true" />
-                Sign In
+                <span className="inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-border-color bg-card-background">
+                  <img src={seastarLogoUrl} alt="SeaStar logo" className="h-10 w-10 object-cover" />
+                </span>
+                {!isSidebarCollapsed && <span className="text-lg font-semibold">SeaStar</span>}
               </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-foreground transition hover:bg-gray-100"
-              >
-                <Settings className="h-4 w-4 text-text-secondary" aria-hidden="true" />
-                Settings
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-foreground transition hover:bg-gray-100"
-              >
-                <LogOut className="h-4 w-4 text-text-secondary" aria-hidden="true" />
-                Sign Out
-              </button>
+              {!isSidebarCollapsed && (
+                <Tooltip label={collapseLabel}>
+                  <button
+                    type="button"
+                    aria-label={collapseLabel}
+                    className="rounded-full border border-border-color p-2 text-text-secondary transition hover:bg-background hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    onClick={toggleSidebar}
+                  >
+                    <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </Tooltip>
+              )}
             </div>
-          </div>
-        </div>
-      </aside>
-      <main className="flex flex-1 overflow-hidden bg-background">{renderActiveView()}</main>
+            {shouldShowNewChat && (
+              <div className={`${isSidebarCollapsed ? 'px-2' : 'px-4'} mt-2`}>
+                {isSidebarCollapsed ? (
+                  <Tooltip label={dropdownOpen ? 'Close menu' : 'Open menu'}>
+                    <button
+                      type="button"
+                      className="flex h-12 w-full items-center justify-center rounded-lg bg-primary text-white shadow-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      onClick={() => setDropdownOpen(prev => !prev)}
+                      aria-label={dropdownOpen ? 'Close menu' : 'Open menu'}
+                      aria-expanded={dropdownOpen}
+                      aria-controls="main-sidebar-menu"
+                    >
+                      <Plus className={`h-5 w-5 transition-transform ${dropdownOpen ? 'rotate-45' : ''}`} />
+                    </button>
+                  </Tooltip>
+                ) : (
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-lg bg-primary px-4 py-3 text-white shadow-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    onClick={() => setDropdownOpen(prev => !prev)}
+                    aria-expanded={dropdownOpen}
+                    aria-controls="main-sidebar-menu"
+                  >
+                    <span className="text-sm font-medium uppercase tracking-wide">New Chat</span>
+                    <Plus className={`h-5 w-5 transition-transform ${dropdownOpen ? 'rotate-45' : ''}`} />
+                  </button>
+                )}
+              </div>
+            )}
+            {menuExpanded && (
+              <div className={`${isSidebarCollapsed ? 'px-2' : 'px-4'} mt-3`}>
+                <nav
+                  id="main-sidebar-menu"
+                  className={`flex flex-col ${isSidebarCollapsed ? 'items-center gap-2' : 'gap-1'}`}
+                >
+                  {menuItems.map(item => {
+                    const Icon = item.icon
+                    const isActive = activeView === item.key
+                    const baseClasses =
+                      'flex w-full items-center rounded-lg p-3 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
+                    const stateClasses = isActive
+                      ? 'bg-gray-100 text-foreground'
+                      : 'text-foreground hover:bg-gray-100'
+                    const layoutClasses = isSidebarCollapsed ? 'justify-center' : 'text-left'
+                    if (isSidebarCollapsed) {
+                      return (
+                        <Tooltip key={item.key} label={item.label}>
+                          <button
+                            type="button"
+                            onClick={() => setActiveView(item.key)}
+                            aria-label={item.label}
+                            className={`${baseClasses} ${stateClasses} ${layoutClasses}`}
+                          >
+                            <Icon className={`h-5 w-5 ${item.iconClassName}`} aria-hidden="true" />
+                          </button>
+                        </Tooltip>
+                      )
+                    }
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => setActiveView(item.key)}
+                        className={`${baseClasses} ${stateClasses} ${layoutClasses}`}
+                      >
+                        <Icon className={`mr-3 h-5 w-5 ${item.iconClassName}`} aria-hidden="true" />
+                        <span>{item.label}</span>
+                      </button>
+                    )
+                  })}
+                </nav>
+              </div>
+            )}
+            <div className="flex flex-1 flex-col">
+              {isNotesView ? (
+                <div className={`${isSidebarCollapsed ? 'px-1' : 'px-4'} mt-3 flex-1 overflow-hidden pb-4`}>
+                  <Sidebar
+                    variant="embedded"
+                    className="h-full"
+                    selectedPath={aiNotesSelectedPath}
+                    onSelect={path => setAiNotesSelectedPath(path)}
+                    isCollapsed={isSidebarCollapsed}
+                    showCollapseControl={false}
+                  />
+                </div>
+              ) : (
+                <div className="flex-1" />
+              )}
+            </div>
+            <div className={`${isSidebarCollapsed ? 'px-2' : 'px-4'} pb-4`} ref={profileRef}>
+              <div className="relative">
+                {isSidebarCollapsed ? (
+                  <Tooltip label="User Profile">
+                    <button
+                      type="button"
+                      className="flex h-11 w-full items-center justify-center rounded-lg p-2 text-sm text-foreground transition hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      onClick={() => setProfileOpen(prev => !prev)}
+                      aria-label="User Profile"
+                      aria-expanded={profileOpen}
+                      aria-controls="profile-menu"
+                    >
+                      <UserCircle className="h-6 w-6 text-text-secondary" aria-hidden="true" />
+                    </button>
+                  </Tooltip>
+                ) : (
+                  <button
+                    type="button"
+                    className="flex w-full items-center rounded-lg p-3 text-left text-sm font-medium text-foreground transition hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    onClick={() => setProfileOpen(prev => !prev)}
+                    aria-expanded={profileOpen}
+                    aria-controls="profile-menu"
+                  >
+                    <UserCircle className="mr-3 h-6 w-6 text-text-secondary" aria-hidden="true" />
+                    <span>User Profile</span>
+                  </button>
+                )}
+                <div
+                  id="profile-menu"
+                  className={`absolute bottom-full mb-2 rounded-lg bg-white py-1 shadow-lg transition-opacity duration-200 ${
+                    profileOpen ? 'visible opacity-100' : 'invisible opacity-0'
+                  } ${isSidebarCollapsed ? 'left-1/2 w-48 -translate-x-1/2' : 'left-0 w-full'}`}
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-foreground transition hover:bg-gray-100"
+                  >
+                    <LogIn className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+                    Sign In
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-foreground transition hover:bg-gray-100"
+                  >
+                    <Settings className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+                    Settings
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-foreground transition hover:bg-gray-100"
+                  >
+                    <LogOut className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </Panel>
+        <PanelResizeHandle className="w-px bg-[var(--border-color)] transition-opacity hover:opacity-60" />
+        <Panel defaultSize={76} minSize={40} className="h-full">
+          <main className="flex h-full flex-1 overflow-hidden bg-background">{renderActiveView()}</main>
+        </Panel>
+      </PanelGroup>
     </div>
   )
 }

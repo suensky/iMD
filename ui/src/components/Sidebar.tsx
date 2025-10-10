@@ -6,11 +6,12 @@ import { Tooltip } from './Tooltip'
 type SidebarProps = {
   selectedPath?: string
   onSelect: (p: string) => void
-  onCollapse: () => void
-  onExpand: () => void
-  isCollapsed: boolean
+  onCollapse?: () => void
+  onExpand?: () => void
+  isCollapsed?: boolean
   variant?: 'standalone' | 'embedded'
   className?: string
+  showCollapseControl?: boolean
 }
 
 const combineClasses = (...classes: Array<string | false | null | undefined>) =>
@@ -21,9 +22,10 @@ export function Sidebar({
   onSelect,
   onCollapse,
   onExpand,
-  isCollapsed,
+  isCollapsed = false,
   variant = 'standalone',
   className,
+  showCollapseControl = true,
 }: SidebarProps) {
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery({
@@ -71,16 +73,18 @@ export function Sidebar({
           className,
         )}
       >
-        <Tooltip label="Expand sidebar">
-          <button
-            type="button"
-            aria-label="Expand file explorer"
-            className="rounded-full border border-border-color p-1 text-text-secondary hover:text-foreground hover:bg-background"
-            onClick={onExpand}
-          >
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </Tooltip>
+        {showCollapseControl && (
+          <Tooltip label="Expand sidebar">
+            <button
+              type="button"
+              aria-label="Expand file explorer"
+              className="rounded-full border border-border-color p-1 text-text-secondary hover:bg-background hover:text-foreground"
+              onClick={onExpand}
+            >
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </Tooltip>
+        )}
         <div className="flex-1 overflow-y-auto flex flex-col items-center gap-2 w-full">
           {isLoading && <span className="text-[11px] text-text-secondary">Loading…</span>}
           {error && !isLoading && <span className="text-[11px] text-red-500">Error</span>}
@@ -112,40 +116,28 @@ export function Sidebar({
   return (
     <div
       className={combineClasses(
-        'h-full overflow-y-auto bg-card-background text-foreground',
+        'flex h-full flex-col bg-card-background text-foreground',
         variant === 'standalone' && 'border-r border-border-color',
         className,
       )}
     >
-      <div className="p-4 text-sm font-semibold flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span>Files</span>
-          <Tooltip label="Close sidebar">
-            <button
-              type="button"
-              aria-label="Collapse file explorer"
-              className="rounded-full border border-border-color p-1 text-text-secondary hover:text-foreground hover:bg-background"
-              onClick={onCollapse}
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </Tooltip>
-        </div>
+      <div className="flex items-center justify-between gap-2 px-4 py-3 text-sm font-semibold">
+        <span>Files</span>
         <button
-          className="text-xs px-2 py-1 rounded bg-primary text-white hover:opacity-90 disabled:opacity-60"
+          className="rounded border border-border-color px-2 py-1 text-xs font-medium uppercase tracking-wide text-foreground transition hover:bg-background disabled:opacity-60"
           onClick={handleCreate}
           disabled={createFileMut.isPending}
         >
           {createFileMut.isPending ? 'Creating…' : '+ New'}
         </button>
       </div>
-      {isLoading && <div className="p-4 text-sm text-text-secondary">Loading...</div>}
-      {error && <div className="p-4 text-sm text-red-500">Failed to load files</div>}
-      <ul className="text-sm">
+      {isLoading && <div className="px-4 py-2 text-sm text-text-secondary">Loading...</div>}
+      {error && <div className="px-4 py-2 text-sm text-red-500">Failed to load files</div>}
+      <ul className="flex-1 overflow-y-auto px-2 pb-4 text-sm">
         {files.map((f: FileNode) => (
           <li key={f.path}>
             <button
-              className={`w-full text-left px-4 py-2 transition-colors rounded hover:bg-primary-10 hover:text-primary ${selectedPath === f.path ? 'bg-primary-10 text-primary' : 'text-foreground'}`}
+              className={`w-full rounded px-2 py-2 text-left transition-colors hover:bg-primary-10 hover:text-primary ${selectedPath === f.path ? 'bg-primary-10 text-primary' : 'text-foreground'}`}
               onClick={() => onSelect(f.path)}
             >
               {f.name}
@@ -153,6 +145,23 @@ export function Sidebar({
           </li>
         ))}
       </ul>
+      {showCollapseControl && (
+        <div className="border-t border-border-color px-4 py-3">
+          <Tooltip label="Collapse sidebar">
+            <button
+              type="button"
+              aria-label="Collapse file explorer"
+              className="w-full rounded border border-border-color px-3 py-2 text-sm text-text-secondary transition hover:bg-background hover:text-foreground"
+              onClick={onCollapse}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                <span>Collapse</span>
+              </div>
+            </button>
+          </Tooltip>
+        </div>
+      )}
     </div>
   )
 }
