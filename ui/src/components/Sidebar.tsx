@@ -9,9 +9,22 @@ type SidebarProps = {
   onCollapse: () => void
   onExpand: () => void
   isCollapsed: boolean
+  variant?: 'standalone' | 'embedded'
+  className?: string
 }
 
-export function Sidebar({ selectedPath, onSelect, onCollapse, onExpand, isCollapsed }: SidebarProps) {
+const combineClasses = (...classes: Array<string | false | null | undefined>) =>
+  classes.filter(Boolean).join(' ')
+
+export function Sidebar({
+  selectedPath,
+  onSelect,
+  onCollapse,
+  onExpand,
+  isCollapsed,
+  variant = 'standalone',
+  className,
+}: SidebarProps) {
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery({
     queryKey: ['files', ''],
@@ -51,7 +64,13 @@ export function Sidebar({ selectedPath, onSelect, onCollapse, onExpand, isCollap
 
   if (isCollapsed) {
     return (
-      <div className="h-full border-r border-border-color bg-card-background text-foreground flex flex-col items-center py-4 gap-3">
+      <div
+        className={combineClasses(
+          'flex h-full flex-col items-center gap-3 bg-card-background py-4 text-foreground',
+          variant === 'standalone' && 'border-r border-border-color',
+          className,
+        )}
+      >
         <Tooltip label="Expand sidebar">
           <button
             type="button"
@@ -91,7 +110,13 @@ export function Sidebar({ selectedPath, onSelect, onCollapse, onExpand, isCollap
   }
 
   return (
-    <div className="h-full overflow-y-auto border-r border-border-color bg-card-background text-foreground">
+    <div
+      className={combineClasses(
+        'h-full overflow-y-auto bg-card-background text-foreground',
+        variant === 'standalone' && 'border-r border-border-color',
+        className,
+      )}
+    >
       <div className="p-4 text-sm font-semibold flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span>Files</span>
