@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections.abc import AsyncIterator
@@ -7,8 +8,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Optional
-
-from dotenv import load_dotenv
 
 from agents import (
     Agent,
@@ -18,13 +17,31 @@ from agents import (
     set_default_openai_key,
 )
 from agents.exceptions import AgentsException
+from agents.stream_events import RawResponsesStreamEvent
+from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseTextDeltaEvent
-from agents.stream_events import RawResponsesStreamEvent
+
+from .exceptions import AgentConfigurationError, AgentExecutionError
+from .interface import AgentInterface, ChatRequest
 
 
-class AIServiceError(RuntimeError):
-    """Raised when the AI backend cannot fulfill a request."""
+class OpenAIAgent(AgentInterface):
+    """Agent implementation backed by the OpenAI Agents SDK."""
+
+    async def process_stream(self, request: ChatRequest) -> AsyncIterator[bytes]:
+        if request.mode == "edit":
+            stream = _edit(request.path, request.content, request.message)
+            async for chunk in _jsonl_stream(stream, final_key="proposedContent"):
+                yield chunk
+            return
+
+        stream = _ask(request.path, request.content, request.message)
+        async for chunk in _jsonl_stream(stream, final_key="answer"):
+            yield chunk
+
+
+# Internal helpers replicate the previous ai_service module while remaining reusable.
 
 
 @dataclass(frozen=True)
@@ -36,7 +53,7 @@ class _AISettings:
 
 @lru_cache(maxsize=1)
 def _load_backend_env() -> None:
-    """Ensure backend/.env is loaded after checking the process env."""
+    """Load backend/.env if present so local development works without exporting."""
     if os.getenv("OPENAI_API_KEY"):
         return
     env_path = Path(__file__).resolve().parents[3] / ".env"
@@ -49,7 +66,7 @@ def _get_settings() -> _AISettings:
     _load_backend_env()
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise AIServiceError(
+        raise AgentConfigurationError(
             "OpenAI not configured. Provide OPENAI_API_KEY via environment or backend/.env."
         )
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -102,28 +119,28 @@ def _get_edit_agent() -> Agent[None]:
 
 def _normalize_output(output: object) -> str:
     if output is None:
-        raise AIServiceError("Agent returned no output.")
+        raise AgentExecutionError("Agent returned no output.")
     if not isinstance(output, str):
         output = str(output)
     trimmed = output.strip()
     if not trimmed:
-        raise AIServiceError("Agent returned an empty response.")
+        raise AgentExecutionError("Agent returned an empty response.")
     return trimmed
 
 
 @dataclass
-class StreamChunk:
+class _StreamChunk:
     type: Literal["delta", "final"]
     text: str
 
 
-async def _stream_agent(agent: Agent[None], prompt: str) -> AsyncIterator[StreamChunk]:
+async def _stream_agent(agent: Agent[None], prompt: str) -> AsyncIterator[_StreamChunk]:
     try:
         run = Runner.run_streamed(agent, prompt)
     except AgentsException as exc:  # pragma: no cover - defensive: construction errors
-        raise AIServiceError(f"Agent run failed: {exc}") from exc
+        raise AgentExecutionError(f"Agent run failed: {exc}") from exc
     except Exception as exc:  # pragma: no cover - safety net for unexpected errors
-        raise AIServiceError("Unexpected error while starting the AI agent.") from exc
+        raise AgentExecutionError("Unexpected error while starting the AI agent.") from exc
 
     try:
         async for event in run.stream_events():
@@ -132,17 +149,17 @@ async def _stream_agent(agent: Agent[None], prompt: str) -> AsyncIterator[Stream
                 if isinstance(data, ResponseTextDeltaEvent):
                     delta = data.delta or ""
                     if delta:
-                        yield StreamChunk(type="delta", text=delta)
+                        yield _StreamChunk(type="delta", text=delta)
     except AgentsException as exc:
-        raise AIServiceError(f"Agent run failed: {exc}") from exc
+        raise AgentExecutionError(f"Agent run failed: {exc}") from exc
     except Exception as exc:  # pragma: no cover - safety net for unexpected errors
-        raise AIServiceError("Unexpected error while running the AI agent.") from exc
+        raise AgentExecutionError("Unexpected error while running the AI agent.") from exc
 
     final_output = _normalize_output(getattr(run, "final_output", None))
-    yield StreamChunk(type="final", text=final_output)
+    yield _StreamChunk(type="final", text=final_output)
 
 
-async def ask(path: str, content: str, message: str) -> AsyncIterator[StreamChunk]:
+async def _ask(path: str, content: str, message: str) -> AsyncIterator[_StreamChunk]:
     agent = _get_ask_agent()
     prompt = f"File: {path}\n\nContent:\n\n{content}\n\nQuestion: {message}"
     async for chunk in _stream_agent(agent, prompt):
@@ -159,7 +176,7 @@ def _extract_markdown(text: str) -> str:
     return text.strip()
 
 
-async def edit(path: str, content: str, message: str) -> AsyncIterator[StreamChunk]:
+async def _edit(path: str, content: str, message: str) -> AsyncIterator[_StreamChunk]:
     agent = _get_edit_agent()
     prompt = (
         f"File: {path}\n\nCurrent Markdown content:\n\n{content}\n\nInstruction:\n{message}\n\n"
@@ -169,7 +186,18 @@ async def edit(path: str, content: str, message: str) -> AsyncIterator[StreamChu
         if chunk.type == "final":
             proposed = _extract_markdown(chunk.text)
             if not proposed:
-                raise AIServiceError("Agent returned an empty edit.")
-            yield StreamChunk(type="final", text=proposed)
+                raise AgentExecutionError("Agent returned an empty edit.")
+            yield _StreamChunk(type="final", text=proposed)
         else:
             yield chunk
+
+
+async def _jsonl_stream(
+    stream: AsyncIterator[_StreamChunk], *, final_key: str
+) -> AsyncIterator[bytes]:
+    async for chunk in stream:
+        if chunk.type == "delta":
+            payload = {"type": "delta", "text": chunk.text}
+        else:
+            payload = {"type": "final", final_key: chunk.text}
+        yield (json.dumps(payload) + "\n").encode("utf-8")
