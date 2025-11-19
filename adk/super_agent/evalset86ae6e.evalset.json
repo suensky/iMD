@@ -1,0 +1,16 @@
+{
+  "eval_set_id": "evalset86ae6e",
+  "name": "evalset86ae6e",
+  "eval_cases": [
+    {
+      "eval_id": "casea93cec",
+      "conversation": [],
+      "session_input": {
+        "app_name": "super_agent",
+        "user_id": "user"
+      },
+      "creation_timestamp": 1760683044.5852711
+    }
+  ],
+  "creation_timestamp": 1760683033.312842
+}

@@ -1,29 +1,53 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import os
-from collections.abc import AsyncIterator
-from typing import Any
+from contextlib import aclosing
+from typing import AsyncIterator
 
-try:
-    from google import genai
-    from google.genai import types as genai_types
-except ImportError:  # pragma: no cover - optional dependency
-    genai = None
-    genai_types = None
+from google.adk import Agent
+from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.adk.artifacts.in_memory_artifact_service import (
+    InMemoryArtifactService,
+)
+from google.adk.memory import InMemoryMemoryService
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types as genai_types
 
 from .exceptions import AgentConfigurationError, AgentExecutionError
 from .interface import AgentInterface, ChatRequest
 
+_EDIT_INSTRUCTION = (
+    "You are an expert Markdown editor. Always return the full updated markdown "
+    "inside a single fenced code block labeled 'markdown'. Do not add commentary."
+)
+
+_ASK_INSTRUCTION = (
+    "You are a helpful technical writer. Answer questions precisely and concisely "
+    "based only on the provided markdown content."
+)
+
 
 class GoogleADKAgent(AgentInterface):
-    """Agent implementation that delegates to Google's GenAI SDK."""
+    """Agent implementation that delegates to the Google ADK Python SDK."""
 
     def __init__(self) -> None:
-        if genai is None or genai_types is None:
+        if any(
+            dep is None
+            for dep in (
+                Agent,
+                RunConfig,
+                StreamingMode,
+                InMemoryArtifactService,
+                InMemoryMemoryService,
+                InMemorySessionService,
+                Runner,
+                genai_types,
+            )
+        ):
             raise AgentConfigurationError(
-                "google-genai dependency not installed. "
+                "google-adk dependency not installed. "
                 "Install it to enable the Google ADK agent."
             )
 
@@ -38,55 +62,79 @@ class GoogleADKAgent(AgentInterface):
                 "or GOOGLE_GENAI_API_KEY via environment or backend/.env."
             )
 
-        self._client = genai.Client(api_key=api_key)
-        self._model = os.getenv("GOOGLE_ADK_MODEL", "models/gemini-2.0-flash")
+        self._model = os.getenv("GOOGLE_ADK_MODEL", "gemini-2.0-flash")
 
     async def process_stream(self, request: ChatRequest) -> AsyncIterator[bytes]:
-        system_instruction = _system_instruction_for_mode(request.mode)
-        user_payload = _build_user_payload(request)
+        agent = self._build_agent(request.mode)
+        runner = Runner(
+            app_name=agent.name,
+            agent=agent,
+            artifact_service=InMemoryArtifactService(),
+            session_service=InMemorySessionService(),
+            memory_service=InMemoryMemoryService(),
+        )
+
+        session = await runner.session_service.create_session(
+            app_name=agent.name,
+            user_id="workspace-user",
+        )
+
+        user_content = genai_types.Content(
+            role="user",
+            parts=[genai_types.Part.from_text(text=_build_user_payload(request))],
+        )
+
+        run_config = RunConfig(streaming_mode=StreamingMode.SSE)
+
+        collected_text = ""
+        final_text = ""
 
         try:
-            response_stream = self._client.responses.stream(
-                model=self._model,
-                contents=[
-                    {
-                        "role": "user",
-                        "parts": [{"text": user_payload}],
-                    }
-                ],
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=system_instruction
-                ),
-            )
+            async with aclosing(
+                runner.run_async(
+                    user_id=session.user_id,
+                    session_id=session.id,
+                    new_message=user_content,
+                    run_config=run_config,
+                )
+            ) as stream:
+                async for event in stream:
+                    text = _extract_event_text(event)
+                    if not text:
+                        continue
+
+                    collected_text, delta = _merge_text(collected_text, text)
+                    if delta:
+                        yield _encode_delta(delta)
+
+                    if not getattr(event, "partial", False):
+                        final_text = collected_text
         except Exception as exc:  # pragma: no cover - SDK level errors
             raise AgentExecutionError(
-                "Google ADK agent failed to start streaming response."
+                "Google ADK agent failed to stream a response."
             ) from exc
 
-        collected: list[str] = []
-        async for chunk in _google_stream_to_jsonl(
-            response_stream,
-            collected,
-        ):
-            yield chunk
-
-        final_text = "".join(collected).strip()
+        final_text = (final_text or collected_text).strip()
         if not final_text:
             raise AgentExecutionError("Google ADK agent returned an empty response.")
 
         final_key = "proposedContent" if request.mode == "edit" else "answer"
-        yield (json.dumps({"type": "final", final_key: final_text}) + "\n").encode(
-            "utf-8"
-        )
+        yield _encode_final(final_key, final_text)
 
-
-def _system_instruction_for_mode(mode: str) -> str:
-    if mode == "edit":
-        return (
-            "You are a precise Markdown editor. Return the fully updated markdown "
-            "inside a single fenced code block labeled 'markdown'."
+    def _build_agent(self, mode: str) -> Agent:
+        if mode == "edit":
+            return Agent(
+                name="markdown_editor",
+                model=self._model,
+                instruction=_EDIT_INSTRUCTION,
+                description="Edits markdown files with precise updates.",
+            )
+        return Agent(
+            name="markdown_qa",
+            model=self._model,
+            instruction=_ASK_INSTRUCTION,
+            description="Answers questions about markdown content.",
         )
-    return "You are a helpful Markdown assistant. Answer concisely using the provided context."
 
 
 def _build_user_payload(request: ChatRequest) -> str:
@@ -100,39 +148,43 @@ def _build_user_payload(request: ChatRequest) -> str:
     return "\n\n".join(parts)
 
 
-async def _google_stream_to_jsonl(
-    response_stream: Any, collected: list[str]
-) -> AsyncIterator[bytes]:
-    for event in response_stream:
-        text = _extract_text(event)
-        if not text:
-            continue
-        collected.append(text)
-        payload = {"type": "delta", "text": text}
-        yield (json.dumps(payload) + "\n").encode("utf-8")
-        await asyncio.sleep(0)
+def _extract_event_text(event: object) -> str:
+    content = getattr(event, "content", None)
+    if not content:
+        return ""
+    parts = getattr(content, "parts", None) or []
+    texts: list[str] = []
+    for part in parts:
+        text = getattr(part, "text", None)
+        if text:
+            texts.append(text)
+    return "".join(texts)
 
 
-def _extract_text(event: Any) -> str | None:
-    """Best-effort extraction of text content from streaming events."""
-    text = getattr(event, "text", None)
-    if text:
-        return text
+def _encode_delta(text: str) -> bytes:
+    return (json.dumps({"type": "delta", "text": text}) + "\n").encode("utf-8")
 
-    candidates = getattr(event, "candidates", None)
-    if not candidates:
-        return None
 
-    for candidate in candidates:
-        content = getattr(candidate, "content", None)
-        if not content:
-            continue
-        parts = getattr(content, "parts", None) or []
-        texts = []
-        for part in parts:
-            value = getattr(part, "text", None)
-            if value:
-                texts.append(value)
-        if texts:
-            return "".join(texts)
-    return None
+def _encode_final(key: str, text: str) -> bytes:
+    return (json.dumps({"type": "final", key: text}) + "\n").encode("utf-8")
+
+
+def _merge_text(existing: str, incoming: str) -> tuple[str, str]:
+    if not incoming:
+        return existing, ""
+    if not existing:
+        return incoming, incoming
+
+    if incoming.startswith(existing):
+        return incoming, incoming[len(existing) :]
+
+    max_overlap = min(len(existing), len(incoming))
+    for overlap in range(max_overlap, 0, -1):
+        if existing.endswith(incoming[:overlap]):
+            merged = existing + incoming[overlap:]
+            return merged, incoming[overlap:]
+
+    if existing.startswith(incoming):
+        return existing, ""
+
+    return existing + incoming, incoming
